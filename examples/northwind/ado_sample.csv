@@ -1,0 +1,24 @@
+ID,Work Item Type,Title,Assigned To,State,Tags
+2001,Epic,Autonomous fleet routing,Sofia Marchetti,Active,platform
+2002,Epic,Warehouse operator console,Dana Whitfield,New,platform
+2003,Epic,Telemetry and observability pipeline,Ravi Balakrishnan,Active,platform
+2004,Epic,Pilot deployment tooling,Chris Okonkwo,New,pilot
+2005,Epic,Safety interlock certification,Priya Raman,Active,safety
+2010,Feature,Fleet dispatch scheduler,Sofia Marchetti,Active,platform
+2011,Feature,Operator console shell,Dana Whitfield,New,platform
+2020,User Story,Path replanning on obstacle detection,Yuki Tanaka,Closed,nav
+2021,User Story,Pause a single robot from console,Dana Whitfield,Closed,console
+2022,User Story,Telemetry ingest batching,Ravi Balakrishnan,Closed,telemetry
+2023,User Story,E-stop response evidence capture,Priya Raman,Active,safety
+2024,User Story,Interlock harness test rig,Priya Raman,New,safety
+2025,User Story,Certification document pack,Priya Raman,New,safety
+2026,User Story,Operator audit trail view,Dana Whitfield,Resolved,console
+2027,User Story,Fleet health dashboard,Ravi Balakrishnan,Active,telemetry
+2028,User Story,Autonomous vehicle fleet navigation,Yuki Tanaka,New,nav
+2030,Task,Provision staging cluster,Ben Alvarez,Active,infra
+2031,Task,Rotate service credentials,Ben Alvarez,New,infra
+2040,Bug,Console drops websocket on reconnect,Dana Whitfield,Active,console
+2041,Bug,Telemetry timestamp drift,Ravi Balakrishnan,New,telemetry
+2050,Test Case,Verify e-stop latency under load,Priya Raman,New,safety
+2051,Test Plan,Safety certification regression suite,Priya Raman,New,safety
+2060,Impediment,Vendor lidar firmware delayed,Tom Reyes,Active,risk

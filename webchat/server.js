@@ -645,6 +645,32 @@ app.get('/run-normalize-jira', requireAuth, (req, res) => {
   }
 });
 
+// Run the deterministic ADO normalizer (no LLM; pure script).
+// Zero-arg: template defaults to agile; output -> state/normalized/ado.json.
+// Demo seed: if no ADO CSV is present, copy the shipped example so a fresh
+// clone demonstrates the lane. Touches only the gitignored import dir.
+app.get('/run-normalize-ado', requireAuth, (req, res) => {
+  try {
+    const rawDir = path.join(KEEL_DIR, 'knowledge', 'import', 'raw');
+    fs.mkdirSync(rawDir, { recursive: true });
+    const hasAdo = fs.readdirSync(rawDir)
+      .some(f => f.toLowerCase().includes('ado') && f.toLowerCase().endsWith('.csv'));
+    let seeded = '';
+    if (!hasAdo) {
+      const example = path.join(KEEL_DIR, 'examples', 'northwind', 'ado_sample.csv');
+      if (fs.existsSync(example)) {
+        fs.copyFileSync(example, path.join(rawDir, 'ado_sample.csv'));
+        seeded = '(seeded demo ADO CSV from examples/northwind/ado_sample.csv)\n';
+      }
+    }
+    const out = execFileSync('python3', ['tools/normalize_ado.py'],
+                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
+    res.json({ ok: true, output: seeded + out });
+  } catch (e) {
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+  }
+});
+
 // Run the deterministic reconcile (no LLM; pure script)
 app.get('/run-reconcile', requireAuth, (req, res) => {
   try {

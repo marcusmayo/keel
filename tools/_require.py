@@ -10,6 +10,7 @@ from pathlib import Path
 _PRODUCER = {
     "state/normalized/jira-portfolio.json": "/normalize-jira  (needs a CSV export in knowledge/import/raw/)",
     "state/normalized/backlog.json":        "/normalize-backlog  (needs a *Backlog*.xlsx in knowledge/import/raw/)",
+    "state/normalized/ado.json":            "/normalize-ado  (needs an ADO CSV export in knowledge/import/raw/)",
     "state/normalized/reconcile.json":      "/reconcile-run",
     "state/normalized/semantic.json":       "/reconcile-semantic",
     "state/resolutions.json":               "/merge-accept  (records confirmed merge decisions)",

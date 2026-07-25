@@ -15,9 +15,12 @@ from _require import require
 SOURCES = {
     "jira":    Path("state/normalized/jira-portfolio.json"),
     "backlog": Path("state/normalized/backlog.json"),
+    "ado":     Path("state/normalized/ado.json"),
 }
 which = sys.argv[1] if len(sys.argv) > 1 else "jira"
-NORM = SOURCES.get(which, SOURCES["jira"])
+if which not in SOURCES:
+    sys.exit(f"ABORT: unknown reconcile lane {which!r}. Valid lanes: {', '.join(sorted(SOURCES))}")
+NORM = SOURCES[which]
 OUT  = Path("state/normalized/reconcile.json")
 STATE_GLOB = "state/*.yaml"
 

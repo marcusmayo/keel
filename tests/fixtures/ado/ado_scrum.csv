@@ -1,0 +1,7 @@
+ID,Work Item Type,Title,Assigned To,State,Tags
+201,Epic,Billing epic,Amy,New,bill
+202,Feature,Invoices,Amy,In Progress,bill
+203,Product Backlog Item,Add tax field,Ben,Committed,bill
+204,Task,Write tests,Ben,To Do,
+205,Product Backlog Item,Refund flow,Ben,Done,bill
+206,Bug,NPE on save,Amy,Approved,prod

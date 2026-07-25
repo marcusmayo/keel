@@ -54,6 +54,9 @@ COPY keel.config.json CLAUDE.md /app/
 COPY examples/ /app/examples/
 COPY run_e2e.sh clean_demo.sh /app/
 
+# Test harness (fixture tests for ingestion lanes; run via docker exec).
+COPY tests/ /app/tests/
+
 # Runtime state mount points, writable by keel whether or not volumes mount.
 RUN mkdir -p /app/state /app/knowledge /app/logs /app/support \
     && chown -R keel:keel /app

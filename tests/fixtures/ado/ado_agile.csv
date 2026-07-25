@@ -1,0 +1,9 @@
+ID,Work Item Type,Title,Assigned To,State,Tags
+101,Epic,Customer portal,Jane Doe,New,portal
+102,Feature,SSO login,Jane Doe,Active,auth
+103,User Story,Reset password,John Roe,Resolved,auth
+104,Task,Write migration script,,Closed,
+105,Bug,Login returns 500,John Roe,Active,prod
+106,User Story,Deprecated flow,,Removed,
+107,Test Case,Login smoke test,QA,Closed,test
+108,Widget,Mystery gadget,Jane Doe,Active,

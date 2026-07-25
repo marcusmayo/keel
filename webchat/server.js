@@ -165,7 +165,7 @@ app.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
         ok: true,
         filename: orig,
         text: 'Saved raw to knowledge/import/raw/' + stamp + '_' + safeName +
-              '\n\nReady for /normalize-jira (Jira CSV) or /normalize (backlog xlsx), then /reconcile-run.',
+              '\n\nReady for /normalize-jira (Jira CSV), /normalize-ado (Azure DevOps CSV), or /normalize (backlog xlsx), then /reconcile-run.',
         raw: true
       });
     } catch (e) {

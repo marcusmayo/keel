@@ -92,6 +92,25 @@ app.post('/verify', (req, res) => {
 app.post('/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));
 
 app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
+// --- per-instance UI accent color (set via chat: /color <name|hex>) ----------
+const UI_STATE = path.join(KEEL_DIR, 'state', 'ui.json');
+const ACCENT_DEFAULT = '#3b82f6'; // Keel default: azure
+const PALETTE = { azure:'#3b82f6', cyan:'#22d3ee', emerald:'#10b981', lime:'#84cc16', amber:'#f59e0b', rose:'#f43f5e', violet:'#8b5cf6', fuchsia:'#d946ef' };
+function readAccent() {
+  try { const j = JSON.parse(fs.readFileSync(UI_STATE, 'utf8')); if (j && typeof j.accent === 'string') return j.accent; } catch {}
+  return ACCENT_DEFAULT;
+}
+app.get('/color', requireAuth, (req, res) => res.json({ ok: true, accent: readAccent(), palette: PALETTE }));
+app.post('/color', requireAuth, (req, res) => {
+  const v = String((req.body && req.body.value) || '').trim().toLowerCase();
+  const hex = PALETTE[v] || (/^#[0-9a-f]{6}$/.test(v) ? v : null);
+  if (!hex) return res.json({ ok: false, error: 'unknown color', palette: PALETTE });
+  try {
+    fs.mkdirSync(path.dirname(UI_STATE), { recursive: true });
+    fs.writeFileSync(UI_STATE, JSON.stringify({ accent: hex }) + '\n');
+    res.json({ ok: true, accent: hex });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 
 // File upload: extract to text only. No skill runs, nothing is written (A1 review-first).
 const upload = multer({

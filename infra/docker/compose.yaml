@@ -10,6 +10,7 @@ services:
     environment:
       KEEL_BIND: 0.0.0.0        # container netns; host exposure is the ports: line
       KEEL_DIR: /app
+      NODE_PATH: /app/webchat/node_modules   # scripts/ modules (model-routing.js) resolve js-yaml from webchat deps
       HOME: /home/keel          # claude CLI config dir
     ports:
       - "${KEEL_PUBLISH_ADDR:-127.0.0.1}:${KEEL_PUBLISH_PORT:-8443}:8443"

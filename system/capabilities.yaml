@@ -1,0 +1,36 @@
+# Capability registry -- declarative source of truth for optional integrations.
+#
+# scripts/capability.js reads this file; the operator's choice per capability is
+# recorded in state/capabilities.json (gitignored -- deployment state, not code).
+# A gated script calls requireCapability(id) and refuses to start when its
+# capability is not enabled -- structural disable, not a silent no-op.
+#
+# Nothing here contains a credential. `secrets` names the Key Vault secret that
+# must exist. Adding a capability is a config change: append an entry, no code.
+
+capabilities:
+
+  - id: model
+    name: Model backend
+    required: true
+    summary: >
+      The Claude Code backend every skill runs through. Calls route via the
+      egress gate (tripwire, tokenize, rehydrate, hash-chained audit) and,
+      when configured, the LiteLLM gateway defined in system/model-routing.yaml.
+    enables:
+      - All portfolio skills (pipeline, reconcile, score, draft, people)
+      - Webchat responses
+    without:
+      - No agent. Ingest, redaction, reconcile tools, and audit still function,
+        but nothing can be drafted, scored, or summarized by the model.
+    secrets:
+      - name: model-api-key
+        description: API key for the model provider (Anthropic direct, or the
+          LiteLLM gateway key when routing to OpenRouter).
+    setup:
+      - Direct Anthropic is simplest. LiteLLM in front of OpenRouter gives
+        provider choice; pin real model IDs in system/model-routing.yaml.
+      - |
+        Create the secret in Key Vault (replace <vault> and <value>):
+          az keyvault secret set --vault-name <vault> --name model-api-key --value <value>
+    verify: fetch-secret model-api-key

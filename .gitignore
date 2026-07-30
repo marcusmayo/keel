@@ -43,3 +43,4 @@ examples/northwind/__pycache__/
 examples/northwind/expectations.json
 state/weekly-reports/.ready-*
 knowledge/people/
+state/capabilities.json

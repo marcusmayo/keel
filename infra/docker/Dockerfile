@@ -44,6 +44,7 @@ RUN cd /app/webchat && npm ci --omit=dev
 # Code whitelist (context filtering already blocked residue + service.env).
 COPY tools/ /app/tools/
 COPY gate/ /app/gate/
+COPY scripts/ /app/scripts/
 COPY .claude/ /app/.claude/
 COPY webchat/ /app/webchat/
 COPY system/ /app/system/

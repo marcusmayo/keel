@@ -74,6 +74,11 @@ function rateLimited(ip) {
 }
 
 function requireAuth(req, res, next) {
+  // Aegis (fleet control plane): Cloudflare Access validated a service token and set
+  // this header; CF strips any client-supplied Cf-Access-* headers and the origin is
+  // tunnel-only, so its presence == an authenticated machine call. agent-core will
+  // harden this to full Cf-Access-Jwt-Assertion verification.
+  if (req.headers['cf-access-client-id']) return next();
   if (req.session && req.session.authed) return next();
   return res.redirect('/login');
 }

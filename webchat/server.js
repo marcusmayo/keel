@@ -723,6 +723,28 @@ app.get('/run-normalize', requireAuth, (req, res) => {
   }
 });
 
+// Governance: verify the tamper-evident audit chain (scripts/audit-log.js).
+app.get('/run-audit-verify', requireAuth, (req, res) => {
+  try {
+    const out = execFileSync('node', ['scripts/audit-log.js', 'verify'],
+                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
+    res.json({ ok: true, output: out });
+  } catch (e) {
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+  }
+});
+
+// Governance: recursive PII/secret scan over the repo (scripts/scan-tree.js).
+app.get('/run-scan-tree', requireAuth, (req, res) => {
+  try {
+    const out = execFileSync('node', ['scripts/scan-tree.js', '.'],
+                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 60000 });
+    res.json({ ok: true, output: out });
+  } catch (e) {
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+  }
+});
+
 // Weekly report status: report the ready/failed marker for the expected week-ending Friday.
 app.get('/weekly-status', requireAuth, (req, res) => {
   try {

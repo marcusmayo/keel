@@ -1,0 +1,45 @@
+# Model routing -- tier -> model policy, and the single source of truth for both
+# the model `claude -p` requests (model_name) and the OpenRouter model it maps
+# to (openrouter_slug).
+#
+# Change a model with one command, no code edit:
+#   node scripts/model-routing.js set <tier> --slug openrouter/<vendor>/<model>
+#   node scripts/model-routing.js set routine --name claude-sonnet-4-5 --slug openrouter/moonshotai/kimi-k3
+#
+# The LiteLLM gateway config is GENERATED from this file:
+#   node scripts/model-routing.js gateway-config > infra/docker/litellm/openrouter.yaml
+# so the gateway can never drift from this policy. A tier is resolved at call
+# time, so edits take effect on the next invocation -- no restart, no code change.
+#
+# Pinned to the same three models proven on Keel (kimi-k3 / glm-5.2 /
+# deepseek-v4-pro). Slugs are OpenRouter identifiers; verify current slugs at
+# https://openrouter.ai/api/v1/models before changing.
+
+tiers:
+  triage:
+    model_name: claude-3-5-haiku-20241022
+    openrouter_slug: openrouter/z-ai/glm-5.2
+    use_for: [inbox classification, quick lookups]
+  routine:
+    model_name: claude-sonnet-4-5
+    openrouter_slug: openrouter/moonshotai/kimi-k3
+    use_for: [drafts, digests, skill execution, reports]
+  complex:
+    model_name: deepseek-v4-pro
+    openrouter_slug: openrouter/deepseek/deepseek-v4-pro
+    use_for: [multi-step reasoning, build sessions]
+
+default_tier: routine
+
+# Vision model for the attested-image interpret path (pending panel). This is
+# DIRECT to Anthropic, not through the OpenRouter gateway -- the interpret call
+# uses Anthropic's native image message format. Changed the same way as the
+# text tiers:  node scripts/model-routing.js set-vision --model claude-sonnet-4-6
+vision:
+  model: claude-sonnet-4-6
+  api_url: https://api.anthropic.com/v1/messages
+
+rules:
+  - Log model and tier on every call (scripts/audit-log.js).
+  - Escalate tiers only on defined triggers, never silently.
+  - Review blended cost monthly against tier assignments.

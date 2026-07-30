@@ -50,6 +50,7 @@ function logDaily(line) {
 
 const { checkTripwire } = require('../gate/tripwire');
 const { record: auditRecord } = require('../gate/audit');
+const modelRouting = require('../scripts/model-routing');
 
 const app = express();
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
@@ -107,6 +108,10 @@ function readAccent() {
   return ACCENT_DEFAULT;
 }
 app.get('/color', requireAuth, (req, res) => res.json({ ok: true, accent: readAccent(), palette: PALETTE }));
+app.get('/model', requireAuth, (req, res) => {
+  try { res.json({ ok: true, tiers: modelRouting.list() }); }
+  catch (e) { res.json({ ok: false, error: e.message }); }
+});
 app.post('/color', requireAuth, (req, res) => {
   const v = String((req.body && req.body.value) || '').trim().toLowerCase();
   const hex = PALETTE[v] || (/^#[0-9a-f]{6}$/.test(v) ? v : null);

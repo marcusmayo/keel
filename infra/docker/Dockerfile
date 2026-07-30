@@ -65,5 +65,5 @@ USER keel
 ENV NODE_ENV=production PYTHONUNBUFFERED=1
 EXPOSE 8443
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
-  CMD curl -fsS http://127.0.0.1:8443/ >/dev/null || exit 1
+  CMD curl -fsS http://127.0.0.1:8443/health/liveliness >/dev/null || exit 1
 CMD ["node", "webchat/server.js"]

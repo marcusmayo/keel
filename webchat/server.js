@@ -95,6 +95,7 @@ app.post('/verify', (req, res) => {
 });
 
 app.post('/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));
+app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
 
 app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
 // --- per-instance UI accent color (set via chat: /color <name|hex>) ----------

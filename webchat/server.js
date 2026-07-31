@@ -101,6 +101,12 @@ app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
 app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
 // --- per-instance UI accent color (set via chat: /color <name|hex>) ----------
 const UI_STATE = path.join(KEEL_DIR, 'state', 'ui.json');
+const MODEL_STATE = path.join(KEEL_DIR, 'state', 'active-model.json');
+const MODEL_ALLOW = ['default', 'claude-opus-4-8', 'claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+function readActiveModel() {
+  try { const j = JSON.parse(fs.readFileSync(MODEL_STATE, 'utf8')); if (j && MODEL_ALLOW.includes(j.model)) return j.model; } catch {}
+  return 'default';
+}
 const ACCENT_DEFAULT = '#3b82f6'; // Keel default: azure
 const PALETTE = { azure:'#3b82f6', cyan:'#22d3ee', emerald:'#10b981', lime:'#84cc16', amber:'#f59e0b', rose:'#f43f5e', violet:'#8b5cf6', fuchsia:'#d946ef' };
 function readAccent() {
@@ -109,8 +115,18 @@ function readAccent() {
 }
 app.get('/color', requireAuth, (req, res) => res.json({ ok: true, accent: readAccent(), palette: PALETTE }));
 app.get('/model', requireAuth, (req, res) => {
-  try { res.json({ ok: true, tiers: modelRouting.list() }); }
+  try { res.json({ ok: true, tiers: modelRouting.list(), active: readActiveModel(), allow: MODEL_ALLOW }); }
   catch (e) { res.json({ ok: false, error: e.message }); }
+});
+app.post('/model/select', requireAuth, (req, res) => {
+  try {
+    const model = (req.body && req.body.model) || '';
+    if (!MODEL_ALLOW.includes(model)) return res.status(400).json({ ok: false, error: 'model not allowed' });
+    fs.mkdirSync(path.dirname(MODEL_STATE), { recursive: true });
+    fs.writeFileSync(MODEL_STATE, JSON.stringify({ model: model }) + '\n');
+    try { auditRecord({ action: 'MODEL_SELECT', status: 'OK', model: model, tier: 'manual-override' }); } catch (e) {}
+    res.json({ ok: true, active: model });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.post('/color', requireAuth, (req, res) => {
   const v = String((req.body && req.body.value) || '').trim().toLowerCase();
@@ -875,7 +891,10 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
   sessionParser(req, {}, () => {
-    if (!req.session || !req.session.authed) {
+    // Mirror requireAuth: Cloudflare Access validated the request at the edge
+    // (Cf-Access-* header present == authenticated), OR a direct session is authed.
+    const cfAuthed = req.headers['cf-access-jwt-assertion'] || req.headers['cf-access-client-id'];
+    if (!cfAuthed && (!req.session || !req.session.authed)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -896,7 +915,9 @@ wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ type: 'start' }));
 
     // Stream-JSON mode: Claude Code emits one JSON event per line as it works.
-    const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose'], {
+    const activeModel = readActiveModel();
+    const modelArgs = (activeModel && activeModel !== 'default') ? ['--model', activeModel] : [];
+    const child = spawn('claude', ['-p', prompt, ...modelArgs, '--output-format', 'stream-json', '--verbose'], {
       cwd: KEEL_DIR,
       env: process.env,
     });

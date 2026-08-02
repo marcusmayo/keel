@@ -1,5 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: e5305eb
-synced_at: 2026-08-02T16:03:33Z
+fleet_core_commit: 3a8d7b2
+synced_at: 2026-08-02T17:27:11Z
 manifest:
   a87c9e8d529e78c0c6244d41e3014714ad3b847c6a9180e98a504a7ddd79b506  model-routing.js
+  49bfef3941505aef50026bbcd331d3fa0cb0397863e80621f3c60797e9a309a4  capability.js

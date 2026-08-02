@@ -1,24 +1,30 @@
-# LiteLLM gateway -- OpenRouter (aggregator; frontier open-weights via one key).
-# Judgment-grade cross-provider leg: reasoning + tool-capable models, unlike the
-# local 8b. KEYLESS by design (LiteLLM>=1.92 couples master_key to a DB; see
-# infra/docs/gateway-findings.md). Key = OPENROUTER_API_KEY in keel.env.
-# Slugs live-verified against https://openrouter.ai/api/v1/models on 2026-07-19;
-# all three advertise reasoning=yes tools=yes.
+# GENERATED from System/model-routing.yaml by scripts/model-routing.js.
+# Do not edit by hand -- change models via: model-routing.js set <tier> --slug ...
+# Key = OPENROUTER_API_KEY in the service environment.
 model_list:
-  # primary judgment lane (the alias claude -p asks for by default)
-  - model_name: claude-sonnet-4-5
-    litellm_params:
-      model: openrouter/moonshotai/kimi-k3
-      api_key: os.environ/OPENROUTER_API_KEY
-  # fast lane (small-fast alias)
-  - model_name: claude-3-5-haiku-20241022
+  - model_name: glm-5.2
     litellm_params:
       model: openrouter/z-ai/glm-5.2
       api_key: os.environ/OPENROUTER_API_KEY
-  # third flagship, addressable directly by name
   - model_name: deepseek-v4-pro
     litellm_params:
       model: openrouter/deepseek/deepseek-v4-pro
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: kimi-k3
+    litellm_params:
+      model: openrouter/moonshotai/kimi-k3
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: claude-haiku-4.5
+    litellm_params:
+      model: openrouter/anthropic/claude-haiku-4.5
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: claude-sonnet-4.5
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-4.5
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: claude-opus-4.8
+    litellm_params:
+      model: openrouter/anthropic/claude-opus-4.8
       api_key: os.environ/OPENROUTER_API_KEY
 litellm_settings:
   drop_params: true

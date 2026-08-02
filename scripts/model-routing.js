@@ -117,6 +117,35 @@ function set(tier, fields) {
   return doc.tiers[tier];
 }
 
+// Picker selection, decoupled from tier mutation. Records which model the user
+// picked as a top-level `selected_slug` (NOT a tier), so the routine tier's slug
+// is never overwritten and the gateway model_list (built from tiers) is unchanged.
+function setSelected(slug) {
+  const doc = load();
+  const owner = Object.values(doc.tiers).find(t => t.openrouter_slug === slug);
+  if (!owner) throw new Error(`slug not on any tier: ${slug}`);
+  doc.selected_slug = slug;
+  save(doc);
+  return slug;
+}
+
+// The selected slug, or null if the user has not picked one.
+function getSelected() {
+  const doc = load();
+  return doc.selected_slug || null;
+}
+
+// Resolve the effective default model_name: the user's picked slug if set
+// (mapped back to its owning tier's model_name), otherwise the default tier.
+function resolveSelected() {
+  const doc = load();
+  if (doc.selected_slug) {
+    const owner = Object.values(doc.tiers).find(t => t.openrouter_slug === doc.selected_slug);
+    if (owner && owner.model_name) return owner.model_name;
+  }
+  return resolve();
+}
+
 // Vision model for the attested-image interpret path. Direct to Anthropic,
 // separate from the OpenRouter text tiers. Returns { model, api_url }.
 function resolveVision() {
@@ -175,6 +204,11 @@ if (require.main === module) {
       console.log(`set vision: ${v.model} -> ${v.api_url}`);
     } else if (cmd === 'gateway-config') {
       process.stdout.write(gatewayConfig());
+    } else if (cmd === 'set-selected') {
+      const { flags } = parseFlags(args);
+      if (!flags.slug) { console.error('usage: set-selected --slug openrouter/<v>/<m>'); process.exit(1); }
+      const sel = setSelected(flags.slug);
+      console.log(`selected -> ${sel}`);
     } else if (cmd === 'set') {
       const { flags, rest } = parseFlags(args);
       const tier = rest[0];
@@ -189,4 +223,4 @@ if (require.main === module) {
   } catch (e) { console.error('model-routing: ' + e.message); process.exit(1); }
 }
 
-module.exports = { load, resolve, resolveVision, setVision, gatewayConfig, regenerateGateway, set, list, ROUTING, ROUTING_STATE, ROUTING_DEFAULT };
+module.exports = { load, resolve, resolveVision, resolveSelected, getSelected, setSelected, setVision, gatewayConfig, regenerateGateway, set, list, ROUTING, ROUTING_STATE, ROUTING_DEFAULT };

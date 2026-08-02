@@ -4,7 +4,7 @@
 #
 # Change a model with one command, no code edit:
 #   node scripts/model-routing.js set <tier> --slug openrouter/<vendor>/<model>
-#   node scripts/model-routing.js set routine --name claude-sonnet-4-5 --slug openrouter/moonshotai/kimi-k3
+#   node scripts/model-routing.js set routine --slug openrouter/deepseek/deepseek-v4-pro
 #
 # The LiteLLM gateway config is GENERATED from this file:
 #   node scripts/model-routing.js gateway-config > infra/docker/litellm/openrouter.yaml
@@ -17,18 +17,33 @@
 
 tiers:
   triage:
-    model_name: claude-3-5-haiku-20241022
+    model_name: glm-5.2
     openrouter_slug: openrouter/z-ai/glm-5.2
     use_for: [inbox classification, quick lookups]
   routine:
-    model_name: claude-sonnet-4-5
-    openrouter_slug: openrouter/moonshotai/kimi-k3
-    use_for: [drafts, digests, skill execution, reports]
-  complex:
     model_name: deepseek-v4-pro
     openrouter_slug: openrouter/deepseek/deepseek-v4-pro
+    use_for: [drafts, digests, skill execution, reports]
+  complex:
+    model_name: kimi-k3
+    openrouter_slug: openrouter/moonshotai/kimi-k3
     use_for: [multi-step reasoning, build sessions]
 
+  claude_haiku:
+    model_name: claude-haiku-4.5
+    openrouter_slug: openrouter/anthropic/claude-haiku-4.5
+    use_for:
+      - fast anthropic
+  claude_sonnet:
+    model_name: claude-sonnet-4.5
+    openrouter_slug: openrouter/anthropic/claude-sonnet-4.5
+    use_for:
+      - balanced anthropic
+  claude_opus:
+    model_name: claude-opus-4.8
+    openrouter_slug: openrouter/anthropic/claude-opus-4.8
+    use_for:
+      - max anthropic
 default_tier: routine
 
 # Vision model for the attested-image interpret path (pending panel). This is

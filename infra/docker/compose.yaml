@@ -12,6 +12,7 @@ services:
       KEEL_DIR: /app
       NODE_PATH: /app/webchat/node_modules   # scripts/ modules (model-routing.js) resolve js-yaml from webchat deps
       HOME: /home/keel          # claude CLI config dir
+      ANTHROPIC_BASE_URL: http://gateway:4000   # text via LiteLLM->OpenRouter (vision stays direct)
     ports:
       - "${KEEL_PUBLISH_ADDR:-127.0.0.1}:${KEEL_PUBLISH_PORT:-8443}:8443"
     volumes:                    # image = code; state = volumes (literal split)
@@ -28,7 +29,7 @@ services:
     image: ghcr.io/berriai/litellm@sha256:9ef6f45bc0104940571765e610c52a1d761b5ec85efcd193795281086ee61277
     container_name: keel-gateway
     env_file: [keel.env]
-    command: ["--config", "/cfg/${LITELLM_CONFIG:-gemini.yaml}", "--port", "4000"]
+    command: ["--config", "/cfg/${LITELLM_CONFIG:-openrouter.yaml}", "--port", "4000"]
     volumes:
       - ./litellm:/cfg:ro
     extra_hosts:

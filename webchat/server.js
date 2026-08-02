@@ -102,11 +102,15 @@ app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'chat.
 // --- per-instance UI accent color (set via chat: /color <name|hex>) ----------
 const UI_STATE = path.join(KEEL_DIR, 'state', 'ui.json');
 const MODEL_STATE = path.join(KEEL_DIR, 'state', 'active-model.json');
-const MODEL_ALLOW = ['default', 'claude-opus-4-8', 'claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
-function readActiveModel() {
-  try { const j = JSON.parse(fs.readFileSync(MODEL_STATE, 'utf8')); if (j && MODEL_ALLOW.includes(j.model)) return j.model; } catch {}
-  return 'default';
-}
+const MODEL_LABELS = {
+  'openrouter/deepseek/deepseek-v4-pro': 'DeepSeek V4 Pro',
+  'openrouter/z-ai/glm-5.2': 'GLM 5.2',
+  'openrouter/moonshotai/kimi-k3': 'Kimi K3',
+  'openrouter/anthropic/claude-haiku-4.5': 'Claude Haiku 4.5',
+  'openrouter/anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
+  'openrouter/anthropic/claude-opus-4.8': 'Claude Opus 4.8',
+};
+function modelLabel(slug) { return MODEL_LABELS[slug] || String(slug).split('/').pop(); }
 const ACCENT_DEFAULT = '#3b82f6'; // Keel default: azure
 const PALETTE = { azure:'#3b82f6', cyan:'#22d3ee', emerald:'#10b981', lime:'#84cc16', amber:'#f59e0b', rose:'#f43f5e', violet:'#8b5cf6', fuchsia:'#d946ef' };
 function readAccent() {
@@ -115,18 +119,26 @@ function readAccent() {
 }
 app.get('/color', requireAuth, (req, res) => res.json({ ok: true, accent: readAccent(), palette: PALETTE }));
 app.get('/model', requireAuth, (req, res) => {
-  try { res.json({ ok: true, tiers: modelRouting.list(), active: readActiveModel(), allow: MODEL_ALLOW }); }
-  catch (e) { res.json({ ok: false, error: e.message }); }
+  try {
+    const tiers = modelRouting.list();
+    let routineSlug = null; const seen = {}; const options = [];
+    for (const t of tiers) {
+      const slug = t.slug || t.openrouter_slug;
+      if (t.tier === 'routine' || t.name === 'routine' || t.default) routineSlug = routineSlug || slug;
+      if (slug && !seen[slug]) { seen[slug] = 1; options.push({ slug: slug, label: modelLabel(slug) }); }
+    }
+    const active = modelRouting.getSelected() || routineSlug;
+    res.json({ ok: true, tiers: tiers, active: active, options: options });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 app.post('/model/select', requireAuth, (req, res) => {
   try {
-    const model = (req.body && req.body.model) || '';
-    if (!MODEL_ALLOW.includes(model)) return res.status(400).json({ ok: false, error: 'model not allowed' });
-    fs.mkdirSync(path.dirname(MODEL_STATE), { recursive: true });
-    fs.writeFileSync(MODEL_STATE, JSON.stringify({ model: model }) + '\n');
-    try { auditRecord({ action: 'MODEL_SELECT', status: 'OK', model: model, tier: 'manual-override' }); } catch (e) {}
-    res.json({ ok: true, active: model });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    const slug = (req.body && req.body.slug) || '';
+    if (!MODEL_LABELS[slug]) return res.status(400).json({ ok: false, error: 'model not in allowed set' });
+    execFileSync('node', ['scripts/model-routing.js', 'set-selected', '--slug', slug], { cwd: KEEL_DIR, encoding: 'utf8', timeout: 15000 });
+    try { auditRecord({ action: 'MODEL_SELECT', status: 'OK', slug: slug, tier: 'routine' }); } catch (e) {}
+    res.json({ ok: true, active: slug });
+  } catch (e) { res.status(500).json({ ok: false, error: (e.stdout||'') + (e.stderr||'') + String(e) }); }
 });
 app.post('/color', requireAuth, (req, res) => {
   const v = String((req.body && req.body.value) || '').trim().toLowerCase();
@@ -915,8 +927,8 @@ wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ type: 'start' }));
 
     // Stream-JSON mode: Claude Code emits one JSON event per line as it works.
-    const activeModel = readActiveModel();
-    const modelArgs = (activeModel && activeModel !== 'default') ? ['--model', activeModel] : [];
+    let activeModel; try { activeModel = modelRouting.resolveSelected(); } catch (e) { activeModel = null; }
+    const modelArgs = activeModel ? ['--model', activeModel] : [];
     const child = spawn('claude', ['-p', prompt, ...modelArgs, '--output-format', 'stream-json', '--verbose'], {
       cwd: KEEL_DIR,
       env: process.env,

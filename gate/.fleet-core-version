@@ -1,0 +1,9 @@
+# fleet-core sync stamp -- do not edit by hand
+fleet_core_commit: 675baba
+synced_at: 2026-08-02T19:11:02Z
+manifest:
+  b4b72b77aabb1b3d43774fcc717293d8448c87cbfedaf078a4398e742babb93f  ask.js
+  5e677f3029d953542d2e716a6666e6244749883e848c09af6329b2272ff20dfc  audit.js
+  7443efbb18eb424c9ecf45dfb44acf30a368a2f7c9cae02facd67a3dfa89b10a  gate.js
+  14d67cf84c73592042a849f63d5e8831597588796540b90b9d5d63ced4acb37e  redact.js
+  201ce1a2190e33caef72d7d6be43cc2a214e2931e8deb8187bd12ce4f64d97b6  tripwire.js

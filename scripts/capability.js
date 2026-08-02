@@ -24,20 +24,38 @@ const REGISTRY = process.env.CAPABILITY_REGISTRY
 const STATE = process.env.CAPABILITY_STATE
   || path.join(AGENT_ROOT, 'state', 'capabilities.json');
 
-function loadRegistry() {
+// Shared optional-integration registry, vendored from fleet-core next to this module.
+// Merged with the per-profile registry so every agent inherits the same optional
+// capabilities; a per-profile entry with the same id wins. Absent => no shared caps.
+const SHARED_REGISTRY = process.env.CAPABILITY_SHARED_REGISTRY
+  || path.join(__dirname, 'capabilities-shared.yaml');
+
+function readCaps(file, required) {
   let raw;
   try {
-    raw = fs.readFileSync(REGISTRY, 'utf8');
+    raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
-    throw new Error(`capability registry unreadable at ${REGISTRY}: ${e.message}`);
+    if (required) throw new Error(`capability registry unreadable at ${file}: ${e.message}`);
+    return []; // optional shared registry absent -- no shared capabilities
   }
   const doc = yaml.load(raw);
   const caps = (doc && doc.capabilities) || [];
-  if (!Array.isArray(caps) || caps.length === 0) {
-    throw new Error(`capability registry at ${REGISTRY} defines no capabilities`);
-  }
+  if (!Array.isArray(caps)) throw new Error(`capability registry at ${file} is malformed (capabilities not a list)`);
   for (const c of caps) {
-    if (!c.id) throw new Error('capability registry contains an entry with no id');
+    if (!c.id) throw new Error(`capability registry at ${file} contains an entry with no id`);
+  }
+  return caps;
+}
+
+function loadRegistry() {
+  const own = readCaps(REGISTRY, true);            // per-profile registry (required)
+  const shared = readCaps(SHARED_REGISTRY, false); // shared optional registry (may be absent)
+  const byId = new Map();
+  for (const c of own) byId.set(c.id, c);          // per-profile entries first; win on id collision
+  for (const c of shared) if (!byId.has(c.id)) byId.set(c.id, c);
+  const caps = Array.from(byId.values());
+  if (caps.length === 0) {
+    throw new Error(`capability registry at ${REGISTRY} defines no capabilities`);
   }
   return caps;
 }
@@ -117,5 +135,5 @@ function requireCapability(id) {
 
 module.exports = {
   loadRegistry, get, loadState, saveState, status, setStatus, requireCapability,
-  REGISTRY, STATE, AGENT_ROOT,
+  REGISTRY, SHARED_REGISTRY, STATE, AGENT_ROOT,
 };

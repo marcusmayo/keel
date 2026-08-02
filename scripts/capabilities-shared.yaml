@@ -1,0 +1,180 @@
+# capabilities-shared.yaml -- optional integrations shared across all agent profiles.
+# Vendored from fleet-core next to capability.js, which merges these with each agent's
+# per-profile system/capabilities.yaml. Edit here, once.
+
+capabilities:
+
+  - id: telegram
+    name: Telegram bot
+    required: false
+    summary: >
+      Mobile quick-access channel. Stakeholder lookups, pipeline status, and the
+      draft review loop (SENT / HOLD / EDITS / DISCARD) from a phone.
+    enables:
+      - Draft review from mobile without opening the webchat
+      - Quick queries with a short round trip
+      - Push notification when a draft is ready
+    without:
+      - No mobile channel. Webchat over the Cloudflare tunnel remains the only
+        interface, which works on a phone browser but has no push.
+      - Drafts still generate and land in state/draft-queue/ for review.
+    secrets:
+      - name: telegram-bot-token
+        description: Bot token issued by BotFather.
+      - name: telegram-chat-id
+        description: The single authorized chat ID. Acts as the allow list.
+    setup:
+      - In Telegram, message @BotFather and send /newbot. Follow the prompts and
+        copy the token it returns.
+      - |
+        Message your new bot once, then open this URL and copy the numeric
+        "chat":{"id":...} value — that is your chat ID:
+          https://api.telegram.org/bot<TOKEN>/getUpdates
+      - |
+        Create both secrets:
+          az keyvault secret set --vault-name <vault> --name telegram-bot-token --value <token>
+          az keyvault secret set --vault-name <vault> --name telegram-chat-id --value <id>
+      - Only that chat ID is served. Any other sender is ignored and logged.
+    verify: fetch-secret telegram-bot-token
+
+  - id: resend
+    name: Outbound email (Resend)
+    required: false
+    summary: >
+      Operator-notification email only. Sends drafts and digests to your own
+      review address. It never sends to external recipients — that rule is in
+      CLAUDE.md and was added after a real incident.
+    enables:
+      - Draft delivered to your review inbox
+      - Daily and weekly digest by email
+      - Health-check and backup failure alerts
+    without:
+      - No email notifications. Drafts and digests are written to disk only, so
+        you must open the webchat to see them.
+      - Nothing is lost from the drafting itself.
+    secrets:
+      - name: resend-api-key
+        description: Resend API key with send permission.
+      - name: review-email-address
+        description: Your own address. The only permitted recipient.
+    setup:
+      - Create an account at resend.com and verify a sending domain, or use the
+        onboarding sandbox domain for testing.
+      - Create an API key with send permission and copy it once.
+      - |
+        Create both secrets:
+          az keyvault secret set --vault-name <vault> --name resend-api-key --value <key>
+          az keyvault secret set --vault-name <vault> --name review-email-address --value <you@example.com>
+      - The recipient allow list is exactly review-email-address. Outbound to
+        anything else is refused in code, not by policy.
+    verify: fetch-secret resend-api-key
+
+  - id: azure_backup
+    name: Encrypted backup to Azure Blob
+    required: false
+    summary: >
+      Daily encrypted backup of state/ and knowledge/ to a private blob
+      container, authenticated by the VM's managed identity. No stored key.
+    enables:
+      - Daily 02:00 backup
+      - Recovery after VM loss or rebuild
+    without:
+      - No off-box copy. Losing the VM loses all state and knowledge, including
+        pipeline items and stakeholder pages.
+      - Git history still covers anything committed, but state/ is gitignored
+        by design, so it is not recoverable that way.
+    secrets: []
+    setup:
+      - No secret is required. The VM's user-assigned managed identity holds the
+        Storage Blob Data Contributor role on the target container.
+      - Confirm the storage account and container exist and the role assignment
+        is present. Both are provisioned by the infrastructure layer.
+      - Set BACKUP_STORAGE_ACCOUNT and BACKUP_CONTAINER in the service
+        environment.
+    verify: managed-identity-blob-write
+
+  - id: cloudflare_tunnel
+    name: Cloudflare tunnel
+    required: false
+    summary: >
+      Outbound-only zero-trust tunnel. Provides webchat and SSH access with no
+      public IP and no inbound ports.
+    enables:
+      - Webchat reachable from outside the VM
+      - SSH over the tunnel
+    without:
+      - The VM has no public IP and a deny-all NSG, so with the tunnel disabled
+        there is no remote access at all. Local console only.
+      - Every internal function still runs; you just cannot reach it.
+    secrets:
+      - name: tunnel-token
+        description: Connector token from Cloudflare Zero Trust.
+    setup:
+      - In Cloudflare Zero Trust, create a tunnel and copy the connector token.
+      - |
+        Create the secret:
+          az keyvault secret set --vault-name <vault> --name tunnel-token --value <token>
+      - Add a public hostname routing to http://localhost:8443 for the webchat.
+      - This is normally provisioned by the infrastructure layer at first boot.
+    verify: fetch-secret tunnel-token
+
+  - id: calendar
+    name: Calendar feed
+    required: false
+    summary: >
+      Optional read-only external calendar (an ICS/webcal subscription URL). The
+      morning briefing factors real calendar events in alongside the due dates
+      and estimates tracked internally on action items. Internal due-date
+      tracking always works; this capability adds awareness of a calendar the
+      operator keeps elsewhere.
+    enables:
+      - Morning briefing shows the day's and week's external calendar events
+      - Deadline and event reminders push when Telegram or Resend is enabled
+    without:
+      - No external calendar awareness. Action items still carry due dates and
+        estimates, and the morning briefing still surfaces overdue and upcoming
+        items from the action register — that tracking is internal and always on.
+      - What is lost is visibility of events held in an outside calendar.
+    secrets:
+      - name: calendar-ics-url
+        description: A read-only ICS/webcal subscription URL. May embed a private
+          token, so it is stored as a secret rather than in config.
+    setup:
+      - |
+        In your calendar provider, find the read-only ICS/iCal subscription URL
+        (often "export", "secret address in iCal format", or "public URL").
+      - |
+        Store it as the secret (replace <vault> and <url>):
+          az keyvault secret set --vault-name <vault> --name calendar-ics-url --value <url>
+      - Use a read-only feed. The agent never writes to the calendar.
+    verify: fetch-secret calendar-ics-url
+
+  - id: vision
+    name: Image interpretation (vision)
+    required: false
+    summary: >
+      The attested-vision path in the pending panel — sends a diagram or image
+      that OCR could not read to a vision model, direct to Anthropic, after the
+      operator confirms the exact image. Uses a direct Anthropic key, separate
+      from the OpenRouter key the text skills use.
+    enables:
+      - Interpret button on vision-pending items in the pending panel
+      - Structure/description of diagrams that Tesseract OCR cannot recover
+    without:
+      - No image interpretation. Images whose OCR recovers little text are
+        still admitted and flagged vision-pending, and remain visible in the
+        pending panel — they simply cannot be interpreted.
+      - Everything else (intake, OCR of text-bearing images, all skills) is
+        unaffected.
+    secrets:
+      - name: vision-api-key
+        description: A direct Anthropic API key for the vision/interpret call.
+          Separate from the OpenRouter model key.
+    setup:
+      - |
+        Create an Anthropic API key at https://console.anthropic.com and store
+        it as the secret (replace <vault> and <key>):
+          az keyvault secret set --vault-name <vault> --name vision-api-key --value <key>
+      - The vision model is changeable like the text tiers:
+          node scripts/model-routing.js set-vision --model claude-sonnet-4-6
+    verify: fetch-secret vision-api-key

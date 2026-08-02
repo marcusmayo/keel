@@ -1,12 +1,13 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 675baba
-synced_at: 2026-08-02T19:11:02Z
+fleet_core_commit: ac2836c
+synced_at: 2026-08-02T20:14:03Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
-  49bfef3941505aef50026bbcd331d3fa0cb0397863e80621f3c60797e9a309a4  capability.js
+  acf2aa742a58c5a98549ec6e0ac76ee3d376e27126b76e462a79287e2453a099  capability.js
   6516adafc9293e98d5453b6a86e74d73011f2e223122fd257ba99b319e9fa9f1  health-check.js
   a87c9e8d529e78c0c6244d41e3014714ad3b847c6a9180e98a504a7ddd79b506  model-routing.js
   a5f662f05037a3ee34b7d267b73ee88535fd149bf866fce3c06e928e1b0d3809  notify.js
   45430bf05995be7db800d7058844e050de4afc722b01c599d574eab3840b3bc2  redact.js
   bf4fac3071a1286debff9c83f604d1a940e46153cd7b653ea750da03e7f314e1  redaction-gate.js
   b139287935bd6b88289f2962999cfd235fb21b6887c7db8b721155d2a34122ec  scan-tree.js
+  7500ee711a24e23d3cc6b63335aff7a9be43eed40bad4fe508963d0efabffe6a  capabilities-shared.yaml

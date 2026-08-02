@@ -1,7 +1,7 @@
 /**
  * model-routing.js -- tier resolver, change CLI, and gateway-config generator.
  *
- * System/model-routing.yaml is the single source of truth for model routing.
+ * system/model-routing.yaml is the single source of truth for model routing.
  * This module resolves a tier to the model_name that `claude -p` requests,
  * regenerates the LiteLLM gateway config from the same file (so the gateway can
  * never drift from policy), and lets the operator change a model with one
@@ -101,7 +101,7 @@ function gatewayConfig() {
     });
   }
   const cfg = { model_list, litellm_settings: { drop_params: true } };
-  const banner = '# GENERATED from System/model-routing.yaml by scripts/model-routing.js.\n' +
+  const banner = '# GENERATED from system/model-routing.yaml by scripts/model-routing.js.\n' +
                  '# Do not edit by hand -- change models via: model-routing.js set <tier> --slug ...\n' +
                  '# Key = OPENROUTER_API_KEY in the service environment.\n';
   return banner + yaml.dump(cfg, { lineWidth: 100, noRefs: true });
@@ -205,11 +205,11 @@ if (require.main === module) {
     } else if (cmd === 'gateway-config') {
       process.stdout.write(gatewayConfig());
     } else if (cmd === 'set-selected') {
-      const { flags } = parseFlags(args);
-      if (!flags.slug) { console.error('usage: set-selected --slug openrouter/<v>/<m>'); process.exit(1); }
-      const sel = setSelected(flags.slug);
-      console.log(`selected -> ${sel}`);
-    } else if (cmd === 'set') {
+    const { flags } = parseFlags(args);
+    if (!flags.slug) { console.error('usage: set-selected --slug openrouter/<v>/<m>'); process.exit(1); }
+    const sel = setSelected(flags.slug);
+    console.log(`selected -> ${sel}`);
+  } else if (cmd === 'set') {
       const { flags, rest } = parseFlags(args);
       const tier = rest[0];
       if (!tier) { console.error('usage: set <tier> --slug openrouter/<v>/<m> [--name <model_name>]'); process.exit(1); }

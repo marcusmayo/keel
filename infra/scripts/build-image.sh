@@ -11,7 +11,7 @@ case "$(uname -m)" in
   aarch64|arm64) TARCH=arm64;;
   *) echo "unsupported arch: $(uname -m)" >&2; exit 1;;
 esac
-sudo docker build ${NOCACHE} \
+sudo docker build ${NOCACHE:-} \
   --build-arg BASE_IMAGE="${UBUNTU_BASE_IMAGE}@${UBUNTU_BASE_DIGEST}" \
   --build-arg NODE_VERSION="${NODE_VERSION}" \
   --build-arg NODE_SHA256_X64="${NODE_SHA256_LINUX_X64}" \

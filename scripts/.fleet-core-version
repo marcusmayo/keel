@@ -1,8 +1,9 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: ac2836c
-synced_at: 2026-08-02T20:14:03Z
+fleet_core_commit: ad371ad
+synced_at: 2026-08-03T01:06:07Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
+  5aeca081a935f5fca24dece6e4b3d9d7235aa927e6e79d4ec58e2b0bc0011939  auth.js
   acf2aa742a58c5a98549ec6e0ac76ee3d376e27126b76e462a79287e2453a099  capability.js
   6516adafc9293e98d5453b6a86e74d73011f2e223122fd257ba99b319e9fa9f1  health-check.js
   a87c9e8d529e78c0c6244d41e3014714ad3b847c6a9180e98a504a7ddd79b506  model-routing.js

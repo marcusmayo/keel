@@ -1,0 +1,2 @@
+# Agent identity -- read by the shared webchat auth contract for UI branding.
+agent_name: "Keel"

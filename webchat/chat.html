@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Keel</title>
+<title>{{AGENT_NAME}}</title>
 <style>
   :root{--accent:#3b82f6;--accent-text:#fff}
   .modelbar{font-size:12px;color:#888;font-family:monospace;margin:0 16px}
@@ -51,7 +51,7 @@
 </head>
 <body>
   <header>
-    <h1>Keel</h1>
+    <h1>{{AGENT_NAME}}</h1>
     <span class="modelbar" id="modelbar">model: ...</span>
     <span>
       <button onclick="exportRoadmap()" style="margin-right:8px">Export portfolio</button>
@@ -380,7 +380,7 @@
     else { ws.send(JSON.stringify({ prompt: text })); }
   }
 
-  async function logout() { await fetch('/logout', { method: 'POST' }); location.reload(); }
+  function logout() { location.href = '/logout'; }
 
   function toggleCheat() {
     const list = document.getElementById('cheatlist');

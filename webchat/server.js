@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const speakeasy = require('speakeasy');
+const auth = require('../scripts/auth.js');
 const crypto = require('crypto');
 const path = require('path');
 const http = require('http');
@@ -64,41 +65,20 @@ const sessionParser = session({
 });
 app.use(sessionParser);
 
-const attempts = new Map();
-function rateLimited(ip) {
-  const now = Date.now();
-  const rec = attempts.get(ip) || { count: 0, first: now };
-  if (now - rec.first > 15 * 60 * 1000) { rec.count = 0; rec.first = now; }
-  rec.count += 1;
-  attempts.set(ip, rec);
-  return rec.count > 10;
-}
-
-function requireAuth(req, res, next) {
-  // Aegis (fleet control plane): Cloudflare Access validated a service token and set
-  // this header; CF strips any client-supplied Cf-Access-* headers and the origin is
-  // tunnel-only, so its presence == an authenticated machine call. agent-core will
-  // harden this to full Cf-Access-Jwt-Assertion verification.
-  if (req.headers['cf-access-jwt-assertion'] || req.headers['cf-access-client-id']) return next();
-  if (req.session && req.session.authed) return next();
-  return res.redirect('/login');
-}
-
-app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
-
-app.post('/verify', (req, res) => {
-  const ip = req.ip;
-  if (rateLimited(ip)) return res.status(429).json({ ok: false, error: 'Too many attempts. Wait 15 minutes.' });
-  const token = (req.body.token || '').replace(/\s+/g, '');
-  const ok = speakeasy.totp.verify({ secret: TOTP_SECRET, encoding: 'base32', token, window: 1 });
-  if (ok) { req.session.authed = true; attempts.delete(ip); return res.json({ ok: true }); }
-  return res.status(401).json({ ok: false, error: 'Invalid code' });
-});
-
-app.post('/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));
+// --- shared auth contract (fleet-core: scripts/auth.js) --------------------
+// requireAuth + /login + /verify + /logout + a guarded GET / are single-sourced so the
+// post-Access behavior cannot diverge between agents. Aegis service token bypasses;
+// a human after Cloudflare Access gets no redundant app-TOTP (standardize-on-2).
+const requireAuth = auth.requireAuth;
+let AGENT_NAME = 'Agent';
+try {
+  const _m = require('fs').readFileSync(require('path').join(require('path').dirname(__dirname), 'system', 'agent.yaml'), 'utf8').match(/^\s*agent_name:\s*["']?([^"'\n]+?)["']?\s*$/m);
+  if (_m) AGENT_NAME = _m[1].trim();
+} catch (e) { /* default */ }
+auth.mountAuth(app, { webchatDir: __dirname, totpSecret: TOTP_SECRET, agentName: AGENT_NAME, speakeasy });
 app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
 
-app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
+// GET / is registered by auth.mountAuth (guarded + brand-injected)
 // --- per-instance UI accent color (set via chat: /color <name|hex>) ----------
 const UI_STATE = path.join(KEEL_DIR, 'state', 'ui.json');
 const MODEL_STATE = path.join(KEEL_DIR, 'state', 'active-model.json');

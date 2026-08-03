@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const speakeasy = require('speakeasy');
 const auth = require('../scripts/auth.js');
 const crypto = require('crypto');
 const path = require('path');
@@ -16,11 +15,7 @@ const XLSX = require('xlsx');
 const fs = require('fs');
 const yaml = require('js-yaml');
 
-const TOTP_SECRET = process.env.TOTP_SECRET;
-if (!TOTP_SECRET) {
-  console.error('FATAL: TOTP_SECRET not set in webchat/.env');
-  process.exit(1);
-}
+// app-TOTP removed: Cloudflare Access is the sole authenticator (edge-only).
 
 const KEEL_DIR = process.env.KEEL_DIR || path.join(process.env.HOME, 'keel');
 
@@ -75,7 +70,7 @@ try {
   const _m = require('fs').readFileSync(require('path').join(require('path').dirname(__dirname), 'system', 'agent.yaml'), 'utf8').match(/^\s*agent_name:\s*["']?([^"'\n]+?)["']?\s*$/m);
   if (_m) AGENT_NAME = _m[1].trim();
 } catch (e) { /* default */ }
-auth.mountAuth(app, { webchatDir: __dirname, totpSecret: TOTP_SECRET, agentName: AGENT_NAME, speakeasy });
+auth.mountAuth(app, { webchatDir: __dirname, agentName: AGENT_NAME });
 app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
 
 // GET / is registered by auth.mountAuth (guarded + brand-injected)

@@ -1,31 +1,28 @@
 /**
  * auth.js -- shared webchat auth contract (fleet-core module, vendored into scripts/).
  *
- * Single-sources the Cloudflare-Access-aware auth used by every agent webchat so the
- * post-Access behavior can never diverge between profiles. server.js requires this via
- * '../scripts/auth.js'.
+ * EDGE-ONLY AUTH. Cloudflare Access is the sole authenticator. There is no app-level
+ * password/TOTP login: the only way to be authenticated is a valid Cf-Access-* header
+ * (a human after Access email + MFA, or Aegis's service token). server.js requires this
+ * via '../scripts/auth.js'.
  *
  *   requireAuth(req, res, next)
- *     - Aegis service token (Cf-Access-Client-Id)  -> next()   [machine call, no interactive MFA]
- *     - human session after Cloudflare Access (Cf-Access-Jwt-Assertion) -> next()
- *       (the edge already did email + MFA, so no redundant app-TOTP -> "standardize-on-2")
- *     - else app-TOTP session (req.session.authed)  -> next()
- *     - else                                        -> redirect('/login')
+ *     - Aegis service token (Cf-Access-Client-Id) OR human after Cloudflare Access
+ *       (Cf-Access-Jwt-Assertion)                 -> next()
+ *     - req.session.authed (legacy/parity with the WS upgrade check; a browser can no
+ *       longer set this, but the branch is kept so requireAuth and the WS check stay
+ *       identical)                                -> next()
+ *     - else                                       -> 403 (Access authentication required)
  *
- *   mountAuth(app, { webchatDir, totpSecret, agentName, speakeasy })
- *     Registers, identically for every agent:
+ *   mountAuth(app, { webchatDir, agentName })
  *       GET  /         requireAuth-guarded, serves chat.html (brand-injected)
- *       GET  /login    serves login.html (brand-injected)
- *       POST /verify   TOTP check (rate-limited) -> sets req.session.authed
- *       GET  /logout   clears app session AND 302 -> /cdn-cgi/access/logout  (true logout)
- *       POST /logout   clears app session, returns { ok, redirect } for fetch callers
- *     Returns requireAuth so callers can guard their own per-profile routes with it.
+ *       GET  /logout   ends the Cloudflare Access session (302 -> /cdn-cgi/access/logout)
+ *       POST /logout   same, JSON { ok, redirect } for fetch callers
+ *     Returns requireAuth so callers can guard their own per-profile routes.
+ *     No /login or /verify: the app-TOTP login mechanism is gone; the edge is the factor.
  *
- * Brand: the served HTML has {{AGENT_NAME}} replaced by opts.agentName, so the UI title is
- * profile-driven instead of hardcoded per file.
- *
- * Requires only Node built-ins; the TOTP verifier (speakeasy) is injected by the caller, so
- * this module carries no node_modules dependency of its own and resolves anywhere it is vendored.
+ * Brand: served HTML has {{AGENT_NAME}} replaced by opts.agentName. Requires only Node
+ * built-ins and needs no injected TOTP verifier.
  */
 'use strict';
 const fs = require('fs');
@@ -36,28 +33,9 @@ const ACCESS_LOGOUT = '/cdn-cgi/access/logout';
 function requireAuth(req, res, next) {
   // Aegis service token OR a human session already validated by Cloudflare Access.
   if (req.headers['cf-access-client-id'] || req.headers['cf-access-jwt-assertion']) return next();
+  // Kept in sync with the WS upgrade check; never set by a browser now that app-TOTP is gone.
   if (req.session && req.session.authed) return next();
-  return res.redirect('/login');
-}
-
-function makeRateLimiter(maxAttempts, windowMs) {
-  maxAttempts = maxAttempts || 5;
-  windowMs = windowMs || 15 * 60 * 1000;
-  const attempts = new Map();
-  return {
-    limited: function (ip) {
-      const rec = attempts.get(ip);
-      if (!rec) return false;
-      if (Date.now() - rec.first > windowMs) { attempts.delete(ip); return false; }
-      return rec.count >= maxAttempts;
-    },
-    bump: function (ip) {
-      const rec = attempts.get(ip) || { count: 0, first: Date.now() };
-      rec.count += 1;
-      attempts.set(ip, rec);
-    },
-    clear: function (ip) { attempts.delete(ip); },
-  };
+  return res.status(403).type('text').send('Access authentication required');
 }
 
 function serveBranded(file, agentName) {
@@ -75,38 +53,23 @@ function serveBranded(file, agentName) {
 function mountAuth(app, opts) {
   opts = opts || {};
   const webchatDir = opts.webchatDir;
-  const totpSecret = opts.totpSecret;
   const agentName = opts.agentName || 'Agent';
-  const speakeasy = opts.speakeasy;
-  if (!webchatDir || !speakeasy) {
-    throw new Error('mountAuth requires { webchatDir, speakeasy }');
+  if (!webchatDir) {
+    throw new Error('mountAuth requires { webchatDir }');
   }
-  const rl = makeRateLimiter();
 
   app.get('/', requireAuth, serveBranded(path.join(webchatDir, 'chat.html'), agentName));
-  app.get('/login', serveBranded(path.join(webchatDir, 'login.html'), agentName));
 
-  app.post('/verify', function (req, res) {
-    const ip = req.ip;
-    if (rl.limited(ip)) return res.status(429).json({ ok: false, error: 'too many attempts' });
-    const token = (((req.body && req.body.token) || '') + '').replace(/\s+/g, '');
-    const ok = speakeasy.totp.verify({ secret: totpSecret, encoding: 'base32', token, window: 1 });
-    if (ok) {
-      req.session.authed = true;
-      rl.clear(ip);
-      return res.json({ ok: true });
-    }
-    rl.bump(ip);
-    return res.status(401).json({ ok: false, error: 'invalid code' });
-  });
-
-  // Real logout: clear the app session AND end the Cloudflare Access session, otherwise the
-  // lingering edge session re-authenticates the next request and logout appears to do nothing.
+  // Logout ends the Cloudflare Access session (the only session that authenticates now).
+  // req.session.destroy is kept so any legacy app-session cookie is also cleared; harmless
+  // when there is nothing to destroy.
   function doLogout(req, res, isGet) {
-    req.session.destroy(function () {
+    const done = function () {
       if (isGet) return res.redirect(ACCESS_LOGOUT);
       return res.json({ ok: true, redirect: ACCESS_LOGOUT });
-    });
+    };
+    if (req.session && typeof req.session.destroy === 'function') return req.session.destroy(done);
+    return done();
   }
   app.get('/logout', function (req, res) { doLogout(req, res, true); });
   app.post('/logout', function (req, res) { doLogout(req, res, false); });
@@ -114,4 +77,4 @@ function mountAuth(app, opts) {
   return requireAuth;
 }
 
-module.exports = { requireAuth, mountAuth, makeRateLimiter, serveBranded, ACCESS_LOGOUT };
+module.exports = { requireAuth, mountAuth, serveBranded, ACCESS_LOGOUT };

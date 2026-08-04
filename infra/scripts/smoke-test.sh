@@ -17,7 +17,9 @@ h=unknown; for i in $(seq 1 20); do
 done
 chk health healthy "$h"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$URL/" || echo 000)
-case "$code" in 200|302) echo "PASS http ($code)"; pass=$((pass+1));; *) echo "FAIL http ($code)"; fail=$((fail+1));; esac
+# Edge-only Cloudflare auth: a DIRECT hit to "/" (no Access JWT) is correctly 403ed by
+# requireAuth, which proves the app is up AND enforcing auth. 200/302 = unauth build.
+case "$code" in 200|302) echo "PASS http ($code)"; pass=$((pass+1));; 403) echo "PASS http ($code — edge-auth enforced; direct/unauth request correctly rejected)"; pass=$((pass+1));; *) echo "FAIL http ($code)"; fail=$((fail+1));; esac
 res=$(sudo docker exec "$C" grep -rli --exclude-dir=node_modules "nexgen\|nvcc\|NGE-[0-9]" /app 2>/dev/null | wc -l) || true
 chk residue 0 "$res"
 w=$(sudo docker exec "$C" sh -c 'touch /app/state/.smoke && rm /app/state/.smoke && echo ok') || true

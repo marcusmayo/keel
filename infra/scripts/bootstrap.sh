@@ -3,15 +3,45 @@
 # Injects the two runtime secrets and starts Keel. Run as the admin user.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+AGENT_ROOT="$(pwd)"
+FLAGS="$AGENT_ROOT/.provision-flags"
 ENV=infra/docker/keel.env
 [ -f "$ENV" ] && { echo "ABORT: $ENV exists -- already bootstrapped (delete to redo)"; exit 1; }
 sudo docker image inspect keel:latest >/dev/null 2>&1 || { echo "image missing -- building"; ./infra/scripts/build-image.sh; }
-echo "== TOTP enrollment =="
-SECRET="$(./infra/scripts/gen-totp.sh)"
-echo "== Anthropic API key (input hidden) =="
-read -rs -p "ANTHROPIC_API_KEY: " APIKEY; echo
-echo "== OpenRouter API key (input hidden) =="
-read -rs -p "OPENROUTER_API_KEY (must start with sk-or-): " ORKEY; echo
+# Runtime secrets: fetch from the per-agent Key Vault via the VM's managed identity
+# when the vault is provisioned + seeded (fire-and-forget, no prompts). Fall back to
+# the interactive path PER SECRET if the vault is absent or a secret isn't seeded yet,
+# so a vault-less or half-seeded box still bootstraps. TOTP is seed-time (fetched), not
+# generated, so it stays stable across reboots; generating is only the fallback.
+VAULT_OK=0
+if [ -f "$FLAGS" ]; then
+  # shellcheck disable=SC1090
+  . "$FLAGS"
+  if [ -n "${KEY_VAULT_NAME:-}" ] && [ -n "${MSI_CLIENT_ID:-}" ] && [ -f "$AGENT_ROOT/scripts/fetch-secret.sh" ]; then
+    # shellcheck disable=SC1091
+    . "$AGENT_ROOT/scripts/fetch-secret.sh"
+    if fetch_secret_init; then VAULT_OK=1; echo "vault=$KEY_VAULT_NAME (managed-identity fetch)"; fi
+  fi
+fi
+
+if [ "$VAULT_OK" = 1 ] && SECRET="$(kv_get totp-secret)"; then
+  echo "TOTP secret: fetched from vault"
+else
+  echo "== TOTP enrollment (generating -- no seeded totp-secret) =="
+  SECRET="$(./infra/scripts/gen-totp.sh)"
+fi
+if [ "$VAULT_OK" = 1 ] && APIKEY="$(kv_get anthropic-api-key)"; then
+  echo "ANTHROPIC_API_KEY: fetched from vault"
+else
+  echo "== Anthropic API key (input hidden) =="
+  read -rs -p "ANTHROPIC_API_KEY: " APIKEY; echo
+fi
+if [ "$VAULT_OK" = 1 ] && ORKEY="$(kv_get openrouter-api-key)"; then
+  echo "OPENROUTER_API_KEY: fetched from vault"
+else
+  echo "== OpenRouter API key (input hidden) =="
+  read -rs -p "OPENROUTER_API_KEY (must start with sk-or-): " ORKEY; echo
+fi
 case "$ORKEY" in
   sk-or-*) : ;;
   "") echo "ABORT: OPENROUTER_API_KEY empty -- the gateway needs it to route. Nothing written."; exit 1 ;;

@@ -2,6 +2,7 @@
 # First-login bootstrap on a freshly provisioned VM (either profile).
 # Injects the two runtime secrets and starts Keel. Run as the admin user.
 set -euo pipefail
+die(){ printf 'ABORT: %s\n' "$*" >&2; exit 1; }
 cd "$(dirname "$0")/../.."
 AGENT_ROOT="$(pwd)"
 FLAGS="$AGENT_ROOT/.provision-flags"
@@ -24,22 +25,53 @@ if [ -f "$FLAGS" ]; then
   fi
 fi
 
-if [ "$VAULT_OK" = 1 ] && SECRET="$(kv_get totp-secret)"; then
+# vault_get_or_wait <name>: print a seeded secret from the vault.
+#   * vault reachable + secret present      -> prints it (rc 0)
+#   * NO terminal (cloud-init) + not seeded  -> LOUDLY waits on the serial console for
+#       `set-secrets`, up to 10 min, then aborts NAMING the secret (never prompts)
+#   * a terminal (operator SSH) + not seeded, OR no vault at all -> rc 3, so the caller
+#       falls back interactively (prompt for keys / generate TOTP), naming the secret
+vault_get_or_wait() {
+  local name="$1" val rc waited=0
+  [ "$VAULT_OK" = 1 ] || return 3
+  while :; do
+    val="$(kv_get "$name")"; rc=$?
+    [ "$rc" = 0 ] && { printf '%s' "$val"; return 0; }
+    [ "$rc" != 3 ] && return "$rc"          # hard vault error (kv_get already retried inside)
+    [ -t 0 ] && return 3                      # interactive + not seeded -> caller falls back
+    if [ "$waited" -ge 600 ]; then
+      die "secret '$name' was never seeded (waited 10 min). From the workstation run: fleetctl set-secrets <this-agent>  then reboot the VM -- or SSH in and run this script to paste it by hand."
+    fi
+    echo ">> WAITING FOR SECRET '$name' -- not in the vault yet. Seed it now:  fleetctl set-secrets <this-agent>   (${waited}s / 600s)" >&2
+    sleep 20; waited=$((waited + 20))
+  done
+}
+
+# TOTP -- seed-time (fetched). Interactive fallback generates one on the box.
+if SECRET="$(vault_get_or_wait totp-secret)"; then
   echo "TOTP secret: fetched from vault"
-else
+elif [ -t 0 ]; then
   echo "== TOTP enrollment (generating -- no seeded totp-secret) =="
   SECRET="$(./infra/scripts/gen-totp.sh)"
+else
+  die "cannot obtain 'totp-secret' -- no vault and no terminal to generate or prompt."
 fi
-if [ "$VAULT_OK" = 1 ] && APIKEY="$(kv_get anthropic-api-key)"; then
+# ANTHROPIC_API_KEY -- interactive fallback prompts, naming the secret loudly.
+if APIKEY="$(vault_get_or_wait anthropic-api-key)"; then
   echo "ANTHROPIC_API_KEY: fetched from vault"
-else
-  echo "== Anthropic API key (input hidden) =="
+elif [ -t 0 ]; then
+  echo ""
+  echo ">> SECRET NEEDED: 'anthropic-api-key' is not in the vault. Paste it now, or Ctrl-C and seed it:  fleetctl set-secrets <this-agent>"
   read -rs -p "ANTHROPIC_API_KEY: " APIKEY; echo
-fi
-if [ "$VAULT_OK" = 1 ] && ORKEY="$(kv_get openrouter-api-key)"; then
-  echo "OPENROUTER_API_KEY: fetched from vault"
 else
-  echo "== OpenRouter API key (input hidden) =="
+  die "cannot obtain 'anthropic-api-key' -- no vault and no terminal to prompt."
+fi
+# OPENROUTER_API_KEY -- same; validated below regardless of source.
+if ORKEY="$(vault_get_or_wait openrouter-api-key)"; then
+  echo "OPENROUTER_API_KEY: fetched from vault"
+elif [ -t 0 ]; then
+  echo ""
+  echo ">> SECRET NEEDED: 'openrouter-api-key' is not in the vault. Paste it now, or Ctrl-C and seed it:  fleetctl set-secrets <this-agent>"
   read -rs -p "OPENROUTER_API_KEY (must start with sk-or-): " ORKEY; echo
 fi
 case "$ORKEY" in

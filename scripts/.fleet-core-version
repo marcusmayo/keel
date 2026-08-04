@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 837979a
-synced_at: 2026-08-03T01:55:15Z
+fleet_core_commit: 142a2fb
+synced_at: 2026-08-04T15:10:54Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
   f53f053ef876dace97661f7d76000e877b2aee36b130cc4b3bd902214a53ae5e  auth.js
@@ -12,3 +12,5 @@ manifest:
   bf4fac3071a1286debff9c83f604d1a940e46153cd7b653ea750da03e7f314e1  redaction-gate.js
   b139287935bd6b88289f2962999cfd235fb21b6887c7db8b721155d2a34122ec  scan-tree.js
   7500ee711a24e23d3cc6b63335aff7a9be43eed40bad4fe508963d0efabffe6a  capabilities-shared.yaml
+  b5289e424bfee1f2be32ab48b8649bb06d653025d4ae4b8faa8db7e359aa97f5  telegram-bot.js
+  470b7a4f2f79e827c041fc74f75bb9c35664d9093d02975a85f74a88264b5b45  send-email.js

@@ -116,6 +116,12 @@ app.post('/model/select', requireAuth, (req, res) => {
     res.json({ ok: true, active: slug });
   } catch (e) { res.status(500).json({ ok: false, error: (e.stdout||'') + (e.stderr||'') + String(e) }); }
 });
+// New conversation: rotate the session so the next turn starts fresh (agent forgets the current chat).
+app.post('/session/reset', requireAuth, (req, res) => {
+  try { chatSession.clearSessionId(path.join(KEEL_DIR, 'state')); res.json({ ok: true, message: 'New conversation started.' }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 app.post('/color', requireAuth, (req, res) => {
   const v = String((req.body && req.body.value) || '').trim().toLowerCase();
   const hex = PALETTE[v] || (/^#[0-9a-f]{6}$/.test(v) ? v : null);

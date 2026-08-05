@@ -56,6 +56,7 @@
     <span>
       <button onclick="exportRoadmap()" style="margin-right:8px">Export portfolio</button>
       <button onclick="exportMultisource()" style="margin-right:8px">Export multi-source</button>
+      <button id="webToggle" onclick="toggleWeb()" style="margin-right:8px">web: …</button>
       <span class="swatch" id="accentSwatch" onclick="toggleSwatches()" title="accent color (click to change)" style="margin-right:10px;vertical-align:middle"></span>
       <button onclick="logout()">Log out</button>
     </span>
@@ -113,6 +114,13 @@
   function toggleSwatches(){const el=document.getElementById('swatches');el.style.display=(el.style.display==='flex')?'none':'flex';}
   async function pickColor(hex){try{const r=await (await fetch('/color',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:hex})})).json();if(r.ok){applyAccent(r.accent);}}catch(e){}}
   async function handleColor(cmd){const arg=cmd.slice(6).trim();addMsg(cmd,'me');if(!arg){addMsg('Colors: '+Object.keys(PALETTE).join(', ')+' - or a #rrggbb hex. Usage: /color amber','sys');return;}try{const r=await (await fetch('/color',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:arg})})).json();if(r.ok){applyAccent(r.accent);addMsg('Accent set to '+r.accent,'sys');}else{addMsg('Unknown color. Options: '+Object.keys(r.palette||PALETTE).join(', ')+' or a #rrggbb hex.','err');}}catch(e){addMsg('Color change failed: '+e,'err');}}
+
+  // Web research access: reflect + toggle the per-agent runtime state (state/web-access.json).
+  // OFF (default) is a structural boundary -- the turn denies WebSearch/WebFetch, so the agent cannot reach the web.
+  let WEB_ON=false;
+  function renderWeb(){const b=document.getElementById('webToggle');if(!b)return;b.textContent='web: '+(WEB_ON?'ON':'OFF');b.style.color=WEB_ON?'var(--accent)':'#aaa';b.title='Web research is '+(WEB_ON?'ON - the agent can search/fetch the web':'OFF - structural boundary: the agent cannot reach the web')+'. Click to toggle.';}
+  fetch('/web-access').then(r=>r.json()).then(d=>{if(d&&d.ok){WEB_ON=!!d.enabled;}renderWeb();}).catch(()=>{renderWeb();});
+  async function toggleWeb(){const next=!WEB_ON;try{const r=await(await fetch('/web-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})})).json();if(r&&r.ok){WEB_ON=!!r.enabled;renderWeb();addMsg(r.message||('Web research '+(WEB_ON?'ENABLED':'DISABLED')),'sys');}else{addMsg('Web toggle failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){addMsg('Web toggle failed: '+e,'err');}}
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';

@@ -47,6 +47,7 @@ function logDaily(line) {
 const { checkTripwire } = require('../gate/tripwire');
 const { record: auditRecord } = require('../gate/audit');
 const modelRouting = require('../scripts/model-routing');
+const chatSession = require('../scripts/chat-session.js');
 
 const app = express();
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
@@ -901,55 +902,47 @@ wss.on('connection', (ws) => {
 
     ws.send(JSON.stringify({ type: 'start' }));
 
-    // Stream-JSON mode: Claude Code emits one JSON event per line as it works.
+    // Multi-turn: fleet-core chat-session resumes ONE rolling session per agent, so the
+    // agent's own webchat AND the Aegis relay append to the same conversation. Mechanism
+    // lives in core; the transcript is in the Claude Code session store (persistent volume).
     let activeModel; try { activeModel = modelRouting.resolveSelected(); } catch (e) { activeModel = null; }
-    const modelArgs = activeModel ? ['--model', activeModel] : [];
-    const child = spawn('claude', ['-p', prompt, ...modelArgs, '--output-format', 'stream-json', '--verbose'], {
-      cwd: KEEL_DIR,
-      env: process.env,
-    });
-
-    const rl = readline.createInterface({ input: child.stdout });
     let finalText = '';
     let errText = '';
+    let done = false;
+    const finish = () => { if (done) return; done = true; ws.send(JSON.stringify({ type: 'done' })); };
 
-    rl.on('line', (line) => {
-      if (!line.trim()) return;
-      let ev;
-      try { ev = JSON.parse(line); } catch { return; } // skip non-JSON lines
-
-      // Translate Claude Code events into simple UI events.
-      if (ev.type === 'system' && ev.subtype === 'init') {
-        ws.send(JSON.stringify({ type: 'step', text: 'Session started — loaded context' }));
-      }
-      else if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
-        for (const block of ev.message.content) {
-          if (block.type === 'text' && block.text) {
-            finalText += block.text;
-            ws.send(JSON.stringify({ type: 'token', text: block.text }));
-          } else if (block.type === 'tool_use') {
-            const name = block.name || 'tool';
-            ws.send(JSON.stringify({ type: 'step', text: 'Using: ' + name }));
+    const child = chatSession.runChatTurn(
+      { prompt, model: activeModel, cwd: KEEL_DIR, stateDir: path.join(KEEL_DIR, 'state'), env: process.env },
+      (ev) => {
+        if (ev.type === 'system' && ev.subtype === 'init') {
+          ws.send(JSON.stringify({ type: 'step', text: 'Session ready — conversation memory on' }));
+        }
+        else if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
+          for (const block of ev.message.content) {
+            if (block.type === 'text' && block.text) {
+              finalText += block.text;
+              ws.send(JSON.stringify({ type: 'token', text: block.text }));
+            } else if (block.type === 'tool_use') {
+              ws.send(JSON.stringify({ type: 'step', text: 'Using: ' + (block.name || 'tool') }));
+            }
           }
         }
+        else if (ev.type === 'result') {
+          if (ev.is_error) errText = ev.result || 'Model reported an error';
+        }
+      },
+      (code, stderr) => {
+        if (stderr) errText += stderr;
+        if (code !== 0 && !finalText) {
+          ws.send(JSON.stringify({ type: 'error', text: (errText || 'Model call failed').trim().slice(0, 500) }));
+        }
+        finish();
       }
-      else if (ev.type === 'result') {
-        if (ev.is_error) errText = ev.result || 'Model reported an error';
-      }
-    });
-
-    child.stderr.on('data', (d) => { errText += d.toString(); });
-
-    child.on('close', (code) => {
-      if (code !== 0 && !finalText) {
-        ws.send(JSON.stringify({ type: 'error', text: (errText || 'Model call failed').trim().slice(0, 500) }));
-      }
-      ws.send(JSON.stringify({ type: 'done' }));
-    });
+    );
 
     child.on('error', (e) => {
       ws.send(JSON.stringify({ type: 'error', text: 'Failed to start: ' + e.message }));
-      ws.send(JSON.stringify({ type: 'done' }));
+      finish();
     });
   });
 });

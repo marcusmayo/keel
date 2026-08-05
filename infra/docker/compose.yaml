@@ -20,6 +20,7 @@ services:
       - keel-knowledge:/app/knowledge
       - keel-logs:/app/logs
       - keel-support:/app/support
+      - keel-claude:/home/keel/.claude   # Claude Code session store -> multi-turn memory (persist across recreate)
     restart: unless-stopped
   gateway:
     # OPTIONAL: `docker compose --profile gateway up -d`
@@ -44,3 +45,4 @@ volumes:
   keel-knowledge:
   keel-logs:
   keel-support:
+  keel-claude:

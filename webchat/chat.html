@@ -120,7 +120,12 @@
   let WEB_ON=false;
   function renderWeb(){const b=document.getElementById('webToggle');if(!b)return;b.textContent='web: '+(WEB_ON?'ON':'OFF');b.style.color=WEB_ON?'var(--accent)':'#aaa';b.title='Web research is '+(WEB_ON?'ON - the agent can search/fetch the web':'OFF - structural boundary: the agent cannot reach the web')+'. Click to toggle.';}
   fetch('/web-access').then(r=>r.json()).then(d=>{if(d&&d.ok){WEB_ON=!!d.enabled;}renderWeb();}).catch(()=>{renderWeb();});
-  async function toggleWeb(){const next=!WEB_ON;try{const r=await(await fetch('/web-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})})).json();if(r&&r.ok){WEB_ON=!!r.enabled;renderWeb();addMsg(r.message||('Web research '+(WEB_ON?'ENABLED':'DISABLED')),'sys');}else{addMsg('Web toggle failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){addMsg('Web toggle failed: '+e,'err');}}
+  let webBusy=0;
+  async function toggleWeb(){const next=!WEB_ON;webBusy=Date.now();try{const r=await(await fetch('/web-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})})).json();if(r&&r.ok){WEB_ON=!!r.enabled;renderWeb();addMsg(r.message||('Web research '+(WEB_ON?'ENABLED':'DISABLED')),'sys');}else{addMsg('Web toggle failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){addMsg('Web toggle failed: '+e,'err');}finally{webBusy=Date.now();}}
+  // Reflect web-toggle changes made elsewhere (e.g. the Aegis panel) without a reload: poll the
+  // shared state, update only on change, don't clobber a state just set here (webBusy window).
+  async function syncWeb(){if(Date.now()-webBusy<4000)return;try{const r=await(await fetch('/web-access')).json();if(r&&r.ok&&!!r.enabled!==WEB_ON){WEB_ON=!!r.enabled;renderWeb();}}catch(e){}}
+  setInterval(syncWeb,8000);
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';

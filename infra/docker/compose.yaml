@@ -14,6 +14,7 @@ services:
       HOME: /home/keel          # claude CLI config dir
       ANTHROPIC_BASE_URL: http://gateway:4000   # text via LiteLLM->OpenRouter (vision stays direct)
       ANTHROPIC_SMALL_FAST_MODEL: claude-haiku-4.5   # gateway alias name; unpinned, the CLI sends its dated default and 404s the WebSearch aux-model call
+      WEB_DIRECT_MODEL: claude-sonnet-4-6   # web-ON turns bypass the gateway -> api.anthropic.com for REAL server-side web_search (uses the real ANTHROPIC_API_KEY)
     ports:
       - "${KEEL_PUBLISH_ADDR:-127.0.0.1}:${KEEL_PUBLISH_PORT:-8443}:8443"
     volumes:                    # image = code; state = volumes (literal split)

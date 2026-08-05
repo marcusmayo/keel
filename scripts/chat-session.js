@@ -43,11 +43,23 @@ function clearSessionId(stateDir) {
   try { fs.unlinkSync(sessionFile(stateDir)); } catch { /* already absent */ }
 }
 
-// Build the `claude` argv. Resumes the stored session when present, else starts fresh.
-function buildArgs({ prompt, model, sessionId }) {
+// Read the agent's conversational identity from system/agent.yaml (a per-agent VALUE).
+// Appended to the system prompt each turn so the agent identifies as itself, not the model.
+function readPersona(cwd) {
+  try {
+    const yaml = require('js-yaml');
+    const doc = yaml.load(fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8'));
+    return (doc && typeof doc.persona === 'string' && doc.persona.trim()) ? doc.persona.trim() : null;
+  } catch { return null; }
+}
+
+// Build the `claude` argv. Resumes the stored session when present, else starts fresh; appends
+// the agent persona to the system prompt when one is supplied.
+function buildArgs({ prompt, model, sessionId, persona }) {
   const modelArgs = model ? ['--model', model] : [];
   const resumeArgs = sessionId ? ['--resume', sessionId] : [];
-  return ['-p', prompt, ...modelArgs, ...resumeArgs, '--output-format', 'stream-json', '--verbose'];
+  const personaArgs = (persona && persona.trim()) ? ['--append-system-prompt', persona.trim()] : [];
+  return ['-p', prompt, ...modelArgs, ...resumeArgs, ...personaArgs, '--output-format', 'stream-json', '--verbose'];
 }
 
 // Extract a session id from a parsed stream-json event, tolerating field-name variants.
@@ -65,7 +77,8 @@ function isMissingSessionError(stderr) {
 // Returns the child process (so the caller can kill it on client disconnect).
 function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
   const resumeId = readSessionId(stateDir);
-  const args = buildArgs({ prompt, model, sessionId: resumeId });
+  const persona = readPersona(cwd);
+  const args = buildArgs({ prompt, model, sessionId: resumeId, persona });
   const child = spawn('claude', args, { cwd, env: env || process.env });
 
   const rl = readline.createInterface({ input: child.stdout });
@@ -91,5 +104,5 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
 
 module.exports = {
   runChatTurn, buildArgs, readSessionId, writeSessionId, clearSessionId,
-  sessionFile, eventSessionId, isMissingSessionError,
+  sessionFile, eventSessionId, isMissingSessionError, readPersona,
 };

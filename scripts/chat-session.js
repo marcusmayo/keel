@@ -102,8 +102,30 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
   const resumeId = readSessionId(stateDir);
   const persona = readPersona(cwd, stateDir);
   const webEnabled = readWebAccess(stateDir);
-  const args = buildArgs({ prompt, model, sessionId: resumeId, persona, webEnabled });
-  const child = spawn('claude', args, { cwd, env: env || process.env });
+  const baseEnv = env || process.env;
+
+  // Real web research needs Anthropic's server-side web_search, which the LiteLLM/OpenRouter
+  // gateway does NOT run (it returns canned/echoed content). So when web is ON *and* this agent
+  // is configured with a direct model (WEB_DIRECT_MODEL -- a per-agent VALUE; only agents holding a
+  // real Anthropic key set it), route THIS turn straight to api.anthropic.com: drop the gateway
+  // base URL and the gateway-only small-fast alias, use the direct model (+ the real key). Agents
+  // without WEB_DIRECT_MODEL keep the gateway path unchanged (best-effort). Web-OFF is never touched.
+  let runEnv = baseEnv, runModel = model;
+  const directModel = (baseEnv.WEB_DIRECT_MODEL || '').trim();
+  if (webEnabled && directModel) {
+    runEnv = { ...baseEnv };
+    delete runEnv.ANTHROPIC_BASE_URL;          // main + aux -> api.anthropic.com (bypass the gateway)
+    // The gateway small-fast alias (claude-haiku-4.5) is invalid at Anthropic, and the CLI's default
+    // aux model isn't guaranteed reachable; pin a real dated Anthropic haiku so the CLI's aux/background
+    // calls resolve on the direct route too. Overridable per-agent via WEB_DIRECT_SMALL_FAST_MODEL.
+    runEnv.ANTHROPIC_SMALL_FAST_MODEL = (baseEnv.WEB_DIRECT_SMALL_FAST_MODEL || 'claude-haiku-4-5-20251001').trim();
+    const directKey = (baseEnv.WEB_DIRECT_KEY || '').trim();
+    if (directKey) runEnv.ANTHROPIC_API_KEY = directKey;
+    runModel = directModel;                    // a real Anthropic model id (gateway slugs aren't valid direct)
+  }
+
+  const args = buildArgs({ prompt, model: runModel, sessionId: resumeId, persona, webEnabled });
+  const child = spawn('claude', args, { cwd, env: runEnv });
 
   const rl = readline.createInterface({ input: child.stdout });
   rl.on('line', (line) => {

@@ -43,15 +43,27 @@ function clearSessionId(stateDir) {
   try { fs.unlinkSync(sessionFile(stateDir)); } catch { /* already absent */ }
 }
 
-// Read the agent's conversational identity from system/agent.yaml (a per-agent VALUE).
-// Appended to the system prompt each turn so the agent identifies as itself, not the model.
-function readPersona(cwd) {
+// Read the agent's conversational identity. A runtime override in state/persona.txt (editable
+// with no rebuild) wins over the baked agent.yaml default. Appended to the system prompt each turn.
+function personaFile(stateDir) { return path.join(stateDir, 'persona.txt'); }
+function readPersona(cwd, stateDir) {
+  if (stateDir) { try { const t = fs.readFileSync(personaFile(stateDir), 'utf8'); if (t && t.trim()) return t.trim(); } catch { /* no override */ } }
   try {
     const yaml = require('js-yaml');
     const doc = yaml.load(fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8'));
     return (doc && typeof doc.persona === 'string' && doc.persona.trim()) ? doc.persona.trim() : null;
   } catch { return null; }
 }
+function defaultPersona(cwd) {  // the baked agent.yaml persona, ignoring any override
+  try {
+    const yaml = require('js-yaml');
+    const doc = yaml.load(fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8'));
+    return (doc && typeof doc.persona === 'string' && doc.persona.trim()) ? doc.persona.trim() : null;
+  } catch { return null; }
+}
+function writePersona(stateDir, text) { try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(personaFile(stateDir), String(text || '')); return true; } catch { return false; } }
+function clearPersona(stateDir) { try { fs.unlinkSync(personaFile(stateDir)); } catch { /* already default */ } }
+function hasPersonaOverride(stateDir) { try { fs.accessSync(personaFile(stateDir)); return true; } catch { return false; } }
 
 // Build the `claude` argv. Resumes the stored session when present, else starts fresh; appends
 // the agent persona to the system prompt when one is supplied.
@@ -77,7 +89,7 @@ function isMissingSessionError(stderr) {
 // Returns the child process (so the caller can kill it on client disconnect).
 function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
   const resumeId = readSessionId(stateDir);
-  const persona = readPersona(cwd);
+  const persona = readPersona(cwd, stateDir);
   const args = buildArgs({ prompt, model, sessionId: resumeId, persona });
   const child = spawn('claude', args, { cwd, env: env || process.env });
 
@@ -104,5 +116,6 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
 
 module.exports = {
   runChatTurn, buildArgs, readSessionId, writeSessionId, clearSessionId,
-  sessionFile, eventSessionId, isMissingSessionError, readPersona,
+  sessionFile, eventSessionId, isMissingSessionError,
+  readPersona, defaultPersona, writePersona, clearPersona, hasPersonaOverride, personaFile,
 };

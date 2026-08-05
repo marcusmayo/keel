@@ -122,6 +122,20 @@ app.post('/session/reset', requireAuth, (req, res) => {
   catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// Persona: view + edit the agent's conversational identity/characteristics at runtime (no rebuild).
+// Empty body resets to the baked agent.yaml default. Applies from the next message.
+app.get('/persona', requireAuth, (req, res) => {
+  const stateDir = path.join(KEEL_DIR, 'state');
+  res.json({ ok: true, persona: chatSession.readPersona(KEEL_DIR, stateDir) || '', default: chatSession.defaultPersona(KEEL_DIR) || '', custom: chatSession.hasPersonaOverride(stateDir) });
+});
+app.post('/persona', requireAuth, (req, res) => {
+  const stateDir = path.join(KEEL_DIR, 'state');
+  const t = (req.body && typeof req.body.persona === 'string') ? req.body.persona : '';
+  if (!t.trim()) { chatSession.clearPersona(stateDir); return res.json({ ok: true, message: 'Persona reset to the agent default.', persona: chatSession.readPersona(KEEL_DIR, stateDir) || '', custom: false }); }
+  chatSession.writePersona(stateDir, t);
+  res.json({ ok: true, message: 'Persona updated (applies to the next message).', persona: t.trim(), custom: true });
+});
+
 app.post('/color', requireAuth, (req, res) => {
   const v = String((req.body && req.body.value) || '').trim().toLowerCase();
   const hex = PALETTE[v] || (/^#[0-9a-f]{6}$/.test(v) ? v : null);

@@ -66,12 +66,23 @@ function clearPersona(stateDir) { try { fs.unlinkSync(personaFile(stateDir)); } 
 function hasPersonaOverride(stateDir) { try { fs.accessSync(personaFile(stateDir)); return true; } catch { return false; } }
 
 // Build the `claude` argv. Resumes the stored session when present, else starts fresh; appends
-// the agent persona to the system prompt when one is supplied.
-function buildArgs({ prompt, model, sessionId, persona }) {
+// the agent persona to the system prompt when supplied; denies web tools unless web is enabled.
+function buildArgs({ prompt, model, sessionId, persona, webEnabled }) {
   const modelArgs = model ? ['--model', model] : [];
   const resumeArgs = sessionId ? ['--resume', sessionId] : [];
   const personaArgs = (persona && persona.trim()) ? ['--append-system-prompt', persona.trim()] : [];
-  return ['-p', prompt, ...modelArgs, ...resumeArgs, ...personaArgs, '--output-format', 'stream-json', '--verbose'];
+  const webArgs = webEnabled ? [] : ['--disallowedTools', 'WebSearch,WebFetch'];
+  return ['-p', prompt, ...modelArgs, ...resumeArgs, ...personaArgs, ...webArgs, '--output-format', 'stream-json', '--verbose'];
+}
+
+// Web research access is a per-agent runtime toggle (state/web-access.json), DEFAULT OFF —
+// a structural boundary: the agent literally can't reach the web unless it's turned on.
+function webAccessFile(stateDir) { return path.join(stateDir, 'web-access.json'); }
+function readWebAccess(stateDir) {
+  try { return JSON.parse(fs.readFileSync(webAccessFile(stateDir), 'utf8')).enabled === true; } catch { return false; }
+}
+function writeWebAccess(stateDir, enabled) {
+  try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(webAccessFile(stateDir), JSON.stringify({ enabled: enabled === true, updated: new Date().toISOString() }, null, 2)); return true; } catch { return false; }
 }
 
 // Extract a session id from a parsed stream-json event, tolerating field-name variants.
@@ -90,7 +101,8 @@ function isMissingSessionError(stderr) {
 function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
   const resumeId = readSessionId(stateDir);
   const persona = readPersona(cwd, stateDir);
-  const args = buildArgs({ prompt, model, sessionId: resumeId, persona });
+  const webEnabled = readWebAccess(stateDir);
+  const args = buildArgs({ prompt, model, sessionId: resumeId, persona, webEnabled });
   const child = spawn('claude', args, { cwd, env: env || process.env });
 
   const rl = readline.createInterface({ input: child.stdout });
@@ -118,4 +130,5 @@ module.exports = {
   runChatTurn, buildArgs, readSessionId, writeSessionId, clearSessionId,
   sessionFile, eventSessionId, isMissingSessionError,
   readPersona, defaultPersona, writePersona, clearPersona, hasPersonaOverride, personaFile,
+  readWebAccess, writeWebAccess, webAccessFile,
 };

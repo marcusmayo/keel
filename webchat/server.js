@@ -136,6 +136,17 @@ app.post('/persona', requireAuth, (req, res) => {
   res.json({ ok: true, message: 'Persona updated (applies to the next message).', persona: t.trim(), custom: true });
 });
 
+// Web research access: per-agent runtime toggle (default OFF). When off, the agent's turns
+// deny the web tools structurally (--disallowedTools), so it cannot reach the web.
+app.get('/web-access', requireAuth, (req, res) => {
+  res.json({ ok: true, enabled: chatSession.readWebAccess(path.join(KEEL_DIR, 'state')) });
+});
+app.post('/web-access', requireAuth, (req, res) => {
+  const enabled = !!(req.body && req.body.enabled);
+  chatSession.writeWebAccess(path.join(KEEL_DIR, 'state'), enabled);
+  res.json({ ok: true, enabled, message: 'Web research ' + (enabled ? 'ENABLED' : 'DISABLED') + ' (applies to the next message).' });
+});
+
 app.post('/color', requireAuth, (req, res) => {
   const v = String((req.body && req.body.value) || '').trim().toLowerCase();
   const hex = PALETTE[v] || (/^#[0-9a-f]{6}$/.test(v) ? v : null);

@@ -12,7 +12,7 @@ sudo docker image inspect keel:latest >/dev/null 2>&1 || { echo "image missing -
 # Runtime secrets: fetch from the per-agent Key Vault via the VM's managed identity
 # when the vault is provisioned + seeded (fire-and-forget, no prompts). Fall back to
 # the interactive path PER SECRET if the vault is absent or a secret isn't seeded yet,
-# so a vault-less or half-seeded box still bootstraps. TOTP is seed-time (fetched), not
+# so a vault-less or half-seeded box still bootstraps. app-TOTP is removed (edge auth), not
 # generated, so it stays stable across reboots; generating is only the fallback.
 VAULT_OK=0
 if [ -f "$FLAGS" ]; then
@@ -30,7 +30,7 @@ fi
 #   * NO terminal (cloud-init) + not seeded  -> LOUDLY waits on the serial console for
 #       `set-secrets`, up to 10 min, then aborts NAMING the secret (never prompts)
 #   * a terminal (operator SSH) + not seeded, OR no vault at all -> rc 3, so the caller
-#       falls back interactively (prompt for keys / generate TOTP), naming the secret
+#       falls back interactively (prompt for keys), naming the secret
 vault_get_or_wait() {
   local name="$1" val rc waited=0
   [ "$VAULT_OK" = 1 ] || return 3
@@ -47,15 +47,7 @@ vault_get_or_wait() {
   done
 }
 
-# TOTP -- seed-time (fetched). Interactive fallback generates one on the box.
-if SECRET="$(vault_get_or_wait totp-secret)"; then
-  echo "TOTP secret: fetched from vault"
-elif [ -t 0 ]; then
-  echo "== TOTP enrollment (generating -- no seeded totp-secret) =="
-  SECRET="$(./infra/scripts/gen-totp.sh)"
-else
-  die "cannot obtain 'totp-secret' -- no vault and no terminal to generate or prompt."
-fi
+# App-TOTP removed (edge-only auth migration): Cloudflare Access is the gate; nothing to fetch.
 # ANTHROPIC_API_KEY -- interactive fallback prompts, naming the secret loudly.
 if APIKEY="$(vault_get_or_wait anthropic-api-key)"; then
   echo "ANTHROPIC_API_KEY: fetched from vault"
@@ -80,7 +72,7 @@ case "$ORKEY" in
   *) echo "ABORT: OPENROUTER_API_KEY must start with sk-or- (got a placeholder or wrong key). Nothing written."; exit 1 ;;
 esac
 umask 177
-printf 'TOTP_SECRET=%s\nANTHROPIC_API_KEY=%s\nOPENROUTER_API_KEY=%s\nANTHROPIC_BASE_URL=http://gateway:4000\n' "$SECRET" "$APIKEY" "$ORKEY" > "$ENV"
+printf 'ANTHROPIC_API_KEY=%s\nOPENROUTER_API_KEY=%s\nANTHROPIC_BASE_URL=http://gateway:4000\n' "$APIKEY" "$ORKEY" > "$ENV"
 umask 022
 # regenerate the LiteLLM gateway config from system/model-routing.yaml so the
 # bind-mounted ./litellm has the current 6-model table (fall back to committed).

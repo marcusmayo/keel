@@ -24,23 +24,31 @@ const path = require('node:path');
 const readline = require('node:readline');
 const { spawn } = require('node:child_process');
 
-function sessionFile(stateDir) { return path.join(stateDir, 'chat-session.json'); }
+// Per-ROUTE session files: gateway (LiteLLM/OpenRouter) and direct (api.anthropic.com)
+// transcripts are mutually incompatible (the strict direct validator 400s gateway-era turns),
+// so each route keeps its OWN rolling session. Switching web on/off never resumes a foreign
+// transcript -- no more cross-route 400 + forced reset; each route's context survives.
+function sessionFile(stateDir, route) {
+  return path.join(stateDir, route === 'direct' ? 'chat-session-direct.json' : 'chat-session.json');
+}
 
-function readSessionId(stateDir) {
-  try { return JSON.parse(fs.readFileSync(sessionFile(stateDir), 'utf8')).sessionId || null; }
+function readSessionId(stateDir, route) {
+  try { return JSON.parse(fs.readFileSync(sessionFile(stateDir, route), 'utf8')).sessionId || null; }
   catch { return null; }
 }
 
-function writeSessionId(stateDir, id) {
+function writeSessionId(stateDir, id, route) {
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(sessionFile(stateDir), JSON.stringify({ sessionId: id, updated: new Date().toISOString() }, null, 2));
+    fs.writeFileSync(sessionFile(stateDir, route), JSON.stringify({ sessionId: id, updated: new Date().toISOString() }, null, 2));
     return true;
   } catch { return false; }
 }
 
-function clearSessionId(stateDir) {
-  try { fs.unlinkSync(sessionFile(stateDir)); } catch { /* already absent */ }
+function clearSessionId(stateDir, route) {
+  // route omitted (e.g. the /session/reset endpoint) -> clear BOTH routes: a "new conversation".
+  const routes = route ? [route] : ['gateway', 'direct'];
+  for (const r of routes) { try { fs.unlinkSync(sessionFile(stateDir, r)); } catch { /* absent */ } }
 }
 
 // Read the agent's conversational identity. A runtime override in state/persona.txt (editable
@@ -152,6 +160,7 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
     if (directKey) runEnv.ANTHROPIC_API_KEY = directKey;
     runModel = directModel;                    // a real Anthropic model id (gateway slugs aren't valid direct)
   }
+  const route = (webEnabled && directModel) ? 'direct' : 'gateway';
 
   const start = (sessionId, canRetry) => {
     const args = buildArgs({ prompt, model: runModel, sessionId, persona, webEnabled });
@@ -163,7 +172,7 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
       let evt;
       try { evt = JSON.parse(line); } catch { return; }
       // Starting fresh (no stored id yet): capture and persist the new session id.
-      if (!sessionId) { const sid = eventSessionId(evt); if (sid) writeSessionId(stateDir, sid); }
+      if (!sessionId) { const sid = eventSessionId(evt); if (sid) writeSessionId(stateDir, sid, route); }
       if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
         for (const b of evt.message.content) {
           if (b && b.type === 'text' && b.text) { sawText = true; if (textBuf.length < 1200) textBuf += b.text; }
@@ -184,10 +193,10 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
       const errAll = apiErr + ' ' + stderr + ' ' + textBuf;
       const bareApiError = sawText && textBuf.trim().length < 600 && /^API Error:\s*4\d\d/i.test(textBuf.trim());
       // Stored id but the session itself is gone -> forget it so the next turn starts fresh.
-      if (sessionId && isMissingSessionError(errAll)) clearSessionId(stateDir);
+      if (sessionId && isMissingSessionError(errAll)) clearSessionId(stateDir, route);
       // Resumed transcript rejected by request validation -> drop it, retry ONCE fresh.
       if (canRetry && sessionId && (!sawText || bareApiError) && isSessionIncompatError(errAll)) {
-        clearSessionId(stateDir);
+        clearSessionId(stateDir, route);
         try { onEvent({ type: 'system', subtype: 'session_restart', note: 'stored conversation incompatible with this route; starting fresh' }); } catch { /* ignore */ }
         try { onEvent({ type: 'assistant', message: { content: [{ type: 'text', text: '\n[stored conversation was incompatible with this route -- restarting fresh]\n' }] } }); } catch { /* ignore */ }
         const retry = start(null, false);
@@ -200,7 +209,7 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
     return child;
   };
 
-  return start(readSessionId(stateDir), true);
+  return start(readSessionId(stateDir, route), true);
 }
 
 module.exports = {

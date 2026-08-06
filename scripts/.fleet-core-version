@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
 fleet_core_commit: 804a4c5
-synced_at: 2026-08-06T02:09:30Z
+synced_at: 2026-08-06T19:10:54Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
   f53f053ef876dace97661f7d76000e877b2aee36b130cc4b3bd902214a53ae5e  auth.js
@@ -15,6 +15,6 @@ manifest:
   b5289e424bfee1f2be32ab48b8649bb06d653025d4ae4b8faa8db7e359aa97f5  telegram-bot.js
   470b7a4f2f79e827c041fc74f75bb9c35664d9093d02975a85f74a88264b5b45  send-email.js
   6d8da9a9fc29e8843f6574171fda14081721cdf0119e2821b8049c3240c179db  fetch-secret.sh
-  20be337d87152455bb9ba2e9f7e22f0fb2f150667c30c8c19d682d3336ceb115  chat-session.js
-  9ae608483288eaa1e3e48a51964f8194dbf6ccafeabffd8a6a75156d7809b4fb  webchat-controls.js
+  ecce2b9f6fd7adf798a144ed6313e73bf484d2ecfc851f6208d7f59a279c5c73  chat-session.js
+  e9d1172c8393f52a84c96a2020b9a1306e86ef5fe1da77b1f408f62337ffe0c5  webchat-controls.js
   0c611a56d4188bf1ef692765a490bd50316a30ab91ba9c8af4b1010c8add0d27  webchat-ops.js

@@ -35,8 +35,8 @@ tiers:
     use_for:
       - fast anthropic
   claude_sonnet:
-    model_name: claude-sonnet-4.5
-    openrouter_slug: openrouter/anthropic/claude-sonnet-4.5
+    model_name: claude-sonnet-4.6
+    openrouter_slug: openrouter/anthropic/claude-sonnet-4.6
     use_for:
       - balanced anthropic
   claude_opus:

@@ -15,7 +15,7 @@ services:
       ANTHROPIC_BASE_URL: http://gateway:4000   # text via LiteLLM->OpenRouter (vision stays direct)
       ANTHROPIC_SMALL_FAST_MODEL: claude-haiku-4.5   # gateway alias name; unpinned, the CLI sends its dated default and 404s the WebSearch aux-model call
       WEB_DIRECT_MODEL: claude-sonnet-4-6   # web-ON turns bypass the gateway -> api.anthropic.com for REAL server-side web_search (uses the real ANTHROPIC_API_KEY)
-      WEB_DIRECT_MODELS: "claude-sonnet-4.5=claude-sonnet-4-6,claude-haiku-4.5=claude-haiku-4-5-20251001,claude-opus-4.8=claude-opus-4-8"   # picker->direct map: web-ON runs the SELECTED model's direct equivalent (all three proven on this key)
+      WEB_DIRECT_MODELS: "claude-sonnet-4.6=claude-sonnet-4-6,claude-sonnet-4.5=claude-sonnet-4-6,claude-haiku-4.5=claude-haiku-4-5-20251001,claude-opus-4.8=claude-opus-4-8"   # picker->direct map: web-ON runs the SELECTED model's direct equivalent (all three proven on this key)
     ports:
       - "${KEEL_PUBLISH_ADDR:-127.0.0.1}:${KEEL_PUBLISH_PORT:-8443}:8443"
     volumes:                    # image = code; state = volumes (literal split)

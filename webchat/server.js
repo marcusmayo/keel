@@ -84,9 +84,17 @@ const MODEL_LABELS = {
   'openrouter/moonshotai/kimi-k3': 'Kimi K3',
   'openrouter/anthropic/claude-haiku-4.5': 'Claude Haiku 4.5',
   'openrouter/anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
+  'openrouter/anthropic/claude-sonnet-4.6': 'Claude Sonnet 4.6',
   'openrouter/anthropic/claude-opus-4.8': 'Claude Opus 4.8',
 };
-function modelLabel(slug) { return MODEL_LABELS[slug] || String(slug).split('/').pop(); }
+// Known slugs use the map; unknown ones get a readable title-cased fallback
+// ("claude-sonnet-4.7" -> "Claude Sonnet 4.7") so a routing bump never shows a raw slug.
+function modelLabel(slug) {
+  if (MODEL_LABELS[slug]) return MODEL_LABELS[slug];
+  return String(slug).split('/').pop().split('-')
+    .map(w => /^[0-9.]+$/.test(w) ? w : (w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
+}
 const ACCENT_DEFAULT = '#3b82f6'; // Keel default: azure
 const PALETTE = { azure:'#3b82f6', cyan:'#22d3ee', emerald:'#10b981', lime:'#84cc16', amber:'#f59e0b', rose:'#f43f5e', violet:'#8b5cf6', fuchsia:'#d946ef' };
 function readAccent() {
@@ -117,7 +125,11 @@ app.get('/model', requireAuth, (req, res) => {
 app.post('/model/select', requireAuth, (req, res) => {
   try {
     const slug = (req.body && req.body.slug) || '';
-    if (!MODEL_LABELS[slug]) return res.status(400).json({ ok: false, error: 'model not in allowed set' });
+    // Allowed = any slug on a routing tier (model-routing.yaml via its state copy). The tiers
+    // are the single source of model policy, so this check can never drift from routing the
+    // way the old hardcoded label-map gate did (the sonnet-4.6 "not in allowed set" bug).
+    const onTier = modelRouting.list().some(t => (t.slug || t.openrouter_slug) === slug);
+    if (!onTier) return res.status(400).json({ ok: false, error: 'model not on a routing tier' });
     execFileSync('node', ['scripts/model-routing.js', 'set-selected', '--slug', slug], { cwd: KEEL_DIR, encoding: 'utf8', timeout: 15000 });
     try { auditRecord({ action: 'MODEL_SELECT', status: 'OK', slug: slug, tier: 'routine' }); } catch (e) {}
     res.json({ ok: true, active: slug });

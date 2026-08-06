@@ -85,6 +85,19 @@ function writeWebAccess(stateDir, enabled) {
   try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(webAccessFile(stateDir), JSON.stringify({ enabled: enabled === true, updated: new Date().toISOString() }, null, 2)); return true; } catch { return false; }
 }
 
+// Per-agent web-capable map (WEB_DIRECT_MODELS): comma list of "gatewayName=directModel"
+// pairs, e.g. "claude-sonnet-4.5=claude-sonnet-4-6,claude-opus-4.8=claude-opus-4-8".
+// Keys are the gateway model_names the picker resolves to; values are the direct Anthropic
+// ids that actually run a web turn. Parsed leniently: blank/malformed pairs are skipped.
+function webDirectMap(env) {
+  const out = {};
+  for (const pair of String(((env || {}).WEB_DIRECT_MODELS) || '').split(',')) {
+    const i = pair.indexOf('=');
+    if (i > 0) { const k = pair.slice(0, i).trim(); const v = pair.slice(i + 1).trim(); if (k && v) out[k] = v; }
+  }
+  return out;
+}
+
 // Extract a session id from a parsed stream-json event, tolerating field-name variants.
 function eventSessionId(evt) {
   if (!evt || typeof evt !== 'object') return null;
@@ -124,7 +137,10 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
   // base URL and the gateway-only small-fast alias, use the direct model (+ the real key). Agents
   // without WEB_DIRECT_MODEL keep the gateway path unchanged (best-effort). Web-OFF is never touched.
   let runEnv = baseEnv, runModel = model;
-  const directModel = (baseEnv.WEB_DIRECT_MODEL || '').trim();
+  // Selection-aware: the picked gateway model maps to its direct-Anthropic equivalent via
+  // WEB_DIRECT_MODELS; anything unmapped falls back to WEB_DIRECT_MODEL (the agent's default
+  // direct model). Neither set -> the turn stays on the gateway (best-effort), as before.
+  const directModel = (webDirectMap(baseEnv)[String(model || '').trim()] || (baseEnv.WEB_DIRECT_MODEL || '')).trim();
   if (webEnabled && directModel) {
     runEnv = { ...baseEnv };
     delete runEnv.ANTHROPIC_BASE_URL;          // main + aux -> api.anthropic.com (bypass the gateway)
@@ -191,5 +207,5 @@ module.exports = {
   runChatTurn, buildArgs, readSessionId, writeSessionId, clearSessionId,
   sessionFile, eventSessionId, isMissingSessionError, isSessionIncompatError,
   readPersona, defaultPersona, writePersona, clearPersona, hasPersonaOverride, personaFile,
-  readWebAccess, writeWebAccess, webAccessFile,
+  readWebAccess, writeWebAccess, webAccessFile, webDirectMap,
 };

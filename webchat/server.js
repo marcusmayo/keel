@@ -97,14 +97,21 @@ app.get('/color', requireAuth, (req, res) => res.json({ ok: true, accent: readAc
 app.get('/model', requireAuth, (req, res) => {
   try {
     const tiers = modelRouting.list();
+    // Which picker models can run REAL web search, and what direct model each maps to.
+    const webMap = chatSession.webDirectMap(process.env);
     let routineSlug = null; const seen = {}; const options = [];
     for (const t of tiers) {
       const slug = t.slug || t.openrouter_slug;
       if (t.tier === 'routine' || t.name === 'routine' || t.default) routineSlug = routineSlug || slug;
-      if (slug && !seen[slug]) { seen[slug] = 1; options.push({ slug: slug, label: modelLabel(slug) }); }
+      if (slug && !seen[slug]) {
+        seen[slug] = 1;
+        const wd = (t.model_name && webMap[t.model_name]) || '';
+        options.push({ slug: slug, label: modelLabel(slug), web: !!wd, webModel: wd || undefined });
+      }
     }
     const active = modelRouting.getSelected() || routineSlug;
-    res.json({ ok: true, tiers: tiers, active: active, options: options });
+    const webActive = chatSession.readWebAccess(path.join(KEEL_DIR, 'state'));
+    res.json({ ok: true, tiers: tiers, active: active, options: options, webActive: webActive });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 app.post('/model/select', requireAuth, (req, res) => {

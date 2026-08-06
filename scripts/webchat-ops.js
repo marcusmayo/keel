@@ -38,6 +38,16 @@ function mountChatOps(app, opts) {
   const stateDir = path.join(cwd, 'state');
   const audit = typeof opts.audit === 'function' ? opts.audit : function () {};
 
+  // Shared CLIENT controls (vendored fleet-core file): the chat page loads this via
+  // <script src="/core/webchat-controls.js"> so the picker/toggle JS is single-sourced too.
+  app.get('/core/webchat-controls.js', requireAuth, (req, res) => {
+    res.type('application/javascript');
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(path.resolve(cwd, 'scripts', 'webchat-controls.js'), (err) => {
+      if (err && !res.headersSent) res.status(404).end('// webchat-controls.js not vendored');
+    });
+  });
+
   // Model picker: options + labels from the routing tiers; web/webModel flag which models can
   // run REAL web search (the WEB_DIRECT_MODELS map), and webActive reflects the current toggle.
   app.get('/model', requireAuth, (req, res) => {

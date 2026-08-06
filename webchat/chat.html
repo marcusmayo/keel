@@ -84,6 +84,7 @@
     <button id="attach" onclick="document.getElementById('fileinput').click()" title="Attach .docx .xlsx .txt .md">Attach</button>
     <button id="send" onclick="send()">Send</button>
   </footer>
+<script src="/core/webchat-controls.js"></script>
 <script>
   const log = document.getElementById('log');
   const input = document.getElementById('input');
@@ -95,58 +96,14 @@
   let PALETTE = {};
   function applyAccent(hex){document.documentElement.style.setProperty('--accent',hex);const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);document.documentElement.style.setProperty('--accent-text',(0.299*r+0.587*g+0.114*b)/255>0.6?'#0a0a0a':'#fff');}
   fetch('/color').then(r=>r.json()).then(d=>{if(d.ok){PALETTE=d.palette||{};applyAccent(d.accent);renderSwatches();}}).catch(()=>{});
-  // Model picker: options + labels come from /model (backed by model-routing.js); select posts the slug.
-  // When web research is ON the list collapses to WEB-CAPABLE models only, labeled by the DIRECT
-  // Anthropic model that actually runs the turn -- the picker always shows what is really running.
-  let MODELS=[], MODEL_ACTIVE=null;
-  function webLabel(d){const m=String(d||'').match(/^claude-([a-z]+)-([0-9]+)-([0-9]+)/i);return m?('Claude '+m[1].charAt(0).toUpperCase()+m[1].slice(1)+' '+m[2]+'.'+m[3]):String(d||'');}
-  function renderModelSel(){
-    const bar=document.getElementById('modelbar'); if(!bar)return;
-    if(!MODELS.length){bar.textContent='model: (unavailable)';return;}
-    const list=WEB_ON?MODELS.filter(o=>o.web):MODELS;
-    if(!list.length){bar.innerHTML='model: <span style="color:#f66">(no web-capable models configured)</span>';return;}
-    let cur=MODEL_ACTIVE; if(!list.some(o=>o.slug===cur))cur=list[0].slug;
-    let opts='';
-    for(const o of list){opts+='<option value="'+o.slug+'"'+(o.slug===cur?' selected':'')+'>'+(WEB_ON?webLabel(o.webModel||o.slug):o.label)+'</option>';}
-    bar.innerHTML='model: <select id="modelsel">'+opts+'</select>';
-    wireModelSel();
-  }
-  async function ensureWebModel(){
-    if(!WEB_ON)return;
-    const list=MODELS.filter(o=>o.web);
-    if(!list.length||list.some(o=>o.slug===MODEL_ACTIVE))return;
-    const t=list[0];
-    try{const r=await(await fetch('/model/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:t.slug})})).json();
-      if(r.ok){MODEL_ACTIVE=t.slug;addMsg('Web research needs a web-capable model - switched to '+webLabel(t.webModel||t.slug),'sys');renderModelSel();}}catch(e){}
-  }
-  fetch('/model').then(r=>r.json()).then(d=>{
-    if(d&&d.ok){MODELS=d.options||[];MODEL_ACTIVE=d.active||null;WEB_ON=!!d.webActive;}
-    renderWeb();renderModelSel();
-  }).catch(()=>{renderWeb();const bar=document.getElementById('modelbar');if(bar)bar.textContent='model: (unavailable)';});
-  function wireModelSel(){
-    const sel=document.getElementById('modelsel'); if(!sel)return;
-    sel.onchange=async()=>{
-      const slug=sel.value;
-      try{const r=await(await fetch('/model/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug})})).json();
-        if(r.ok){MODEL_ACTIVE=slug;addMsg('Model set to '+slug+' (applies to next message)','sys');}else{addMsg('Model change failed: '+(r.error||'unknown'),'err');}}
-      catch(e){addMsg('Model change failed: '+e,'err');}
-    };
-  }
+  // Model picker + web-research toggle are single-sourced in fleet-core
+  // (scripts/webchat-controls.js, hash-verified, served at /core/webchat-controls.js and
+  // loaded by the script tag above). addMsg is this page's message renderer -> notify adapter.
+  ChatControls.init({ notify: addMsg });
   function renderSwatches(){const el=document.getElementById('swatches');if(!el)return;let h='';for(const k in PALETTE){h+='<span class="pswatch" title="'+k+'" onclick="pickColor(\''+PALETTE[k]+'\')" style="background:'+PALETTE[k]+'"></span>';}el.innerHTML=h;}
   function toggleSwatches(){const el=document.getElementById('swatches');el.style.display=(el.style.display==='flex')?'none':'flex';}
   async function pickColor(hex){try{const r=await (await fetch('/color',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:hex})})).json();if(r.ok){applyAccent(r.accent);}}catch(e){}}
   async function handleColor(cmd){const arg=cmd.slice(6).trim();addMsg(cmd,'me');if(!arg){addMsg('Colors: '+Object.keys(PALETTE).join(', ')+' - or a #rrggbb hex. Usage: /color amber','sys');return;}try{const r=await (await fetch('/color',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:arg})})).json();if(r.ok){applyAccent(r.accent);addMsg('Accent set to '+r.accent,'sys');}else{addMsg('Unknown color. Options: '+Object.keys(r.palette||PALETTE).join(', ')+' or a #rrggbb hex.','err');}}catch(e){addMsg('Color change failed: '+e,'err');}}
-
-  // Web research access: reflect + toggle the per-agent runtime state (state/web-access.json).
-  // OFF (default) is a structural boundary -- the turn denies WebSearch/WebFetch, so the agent cannot reach the web.
-  let WEB_ON=false;
-  function renderWeb(){const b=document.getElementById('webToggle');if(!b)return;b.textContent='web: '+(WEB_ON?'ON':'OFF');b.style.color=WEB_ON?'var(--accent)':'#aaa';b.title='Web research is '+(WEB_ON?'ON - the agent can search/fetch the web':'OFF - structural boundary: the agent cannot reach the web')+'. Click to toggle.';}
-  let webBusy=0;
-  async function toggleWeb(){const next=!WEB_ON;webBusy=Date.now();try{const r=await(await fetch('/web-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})})).json();if(r&&r.ok){WEB_ON=!!r.enabled;renderWeb();renderModelSel();addMsg(r.message||('Web research '+(WEB_ON?'ENABLED':'DISABLED')),'sys');if(WEB_ON)ensureWebModel();}else{addMsg('Web toggle failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){addMsg('Web toggle failed: '+e,'err');}finally{webBusy=Date.now();}}
-  // Reflect web-toggle changes made elsewhere (e.g. the Aegis panel) without a reload: poll the
-  // shared state, update only on change, don't clobber a state just set here (webBusy window).
-  async function syncWeb(){if(Date.now()-webBusy<4000)return;try{const r=await(await fetch('/web-access')).json();if(r&&r.ok&&!!r.enabled!==WEB_ON){WEB_ON=!!r.enabled;renderWeb();renderModelSel();if(WEB_ON)ensureWebModel();}}catch(e){}}
-  setInterval(syncWeb,8000);
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';

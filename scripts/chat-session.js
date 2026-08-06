@@ -141,7 +141,7 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
     const args = buildArgs({ prompt, model: runModel, sessionId, persona, webEnabled });
     const child = spawn('claude', args, { cwd, env: runEnv });
 
-    let stderr = '', apiErr = '', sawText = false;
+    let stderr = '', apiErr = '', sawText = false, textBuf = '';
     const rl = readline.createInterface({ input: child.stdout });
     rl.on('line', (line) => {
       let evt;
@@ -149,7 +149,9 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
       // Starting fresh (no stored id yet): capture and persist the new session id.
       if (!sessionId) { const sid = eventSessionId(evt); if (sid) writeSessionId(stateDir, sid); }
       if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
-        for (const b of evt.message.content) { if (b && b.type === 'text' && b.text) { sawText = true; break; } }
+        for (const b of evt.message.content) {
+          if (b && b.type === 'text' && b.text) { sawText = true; if (textBuf.length < 1200) textBuf += b.text; }
+        }
       }
       if (evt.type === 'result' && evt.is_error) apiErr += ' ' + String(evt.result || '');
       try { onEvent(evt); } catch { /* caller error shouldn't kill the stream */ }
@@ -158,14 +160,20 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
     child.stderr.on('data', (d) => { stderr += d.toString(); });
 
     child.on('close', (code) => {
-      const errAll = apiErr + ' ' + stderr;
+      // The CLI surfaces an API rejection either as a result error event OR streamed as a bare
+      // assistant text line ("API Error: 400 ..."), often with exit code 0 -- so the streamed
+      // text is part of the error evidence, and a bare API-error line counts as "nothing real
+      // streamed" for the retry guard (a genuine answer that merely QUOTES the phrase is long
+      // and doesn't start with "API Error:", so it never triggers recovery).
+      const errAll = apiErr + ' ' + stderr + ' ' + textBuf;
+      const bareApiError = sawText && textBuf.trim().length < 600 && /^API Error:\s*4\d\d/i.test(textBuf.trim());
       // Stored id but the session itself is gone -> forget it so the next turn starts fresh.
       if (sessionId && isMissingSessionError(errAll)) clearSessionId(stateDir);
       // Resumed transcript rejected by request validation -> drop it, retry ONCE fresh.
-      // Guarded: only when nothing streamed yet, so a retry can never duplicate output.
-      if (canRetry && sessionId && !sawText && isSessionIncompatError(errAll)) {
+      if (canRetry && sessionId && (!sawText || bareApiError) && isSessionIncompatError(errAll)) {
         clearSessionId(stateDir);
         try { onEvent({ type: 'system', subtype: 'session_restart', note: 'stored conversation incompatible with this route; starting fresh' }); } catch { /* ignore */ }
+        try { onEvent({ type: 'assistant', message: { content: [{ type: 'text', text: '\n[stored conversation was incompatible with this route -- restarting fresh]\n' }] } }); } catch { /* ignore */ }
         const retry = start(null, false);
         retry.on('error', (e) => { try { onDone(1, 'retry spawn failed: ' + e.message, { resumed: false }); } catch { /* ignore */ } });
         return; // the retry owns onDone

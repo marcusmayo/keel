@@ -49,6 +49,7 @@ const { record: auditRecord } = require('../gate/audit');
 const modelRouting = require('../scripts/model-routing');
 const chatSession = require('../scripts/chat-session.js');
 const chatOps = require('../scripts/webchat-ops.js');
+const skillsCore = require('../scripts/skills.js');
 
 
 const app = express();
@@ -514,32 +515,103 @@ app.post('/interpret', requireAuth, async (req, res) => {
   }
 });
 
-// Generate + download the reconcile worklist as .xlsx
-// Multi-source worklist: runs BOTH reconcile passes + merges -> xlsx download
-// Round-trip commit: write the staged portfolio edits to YAML (operator-gated)
-app.get('/run-apply-edits', requireAuth, (req, res) => {
+// --- bespoke skill handlers (query mapping / confirm gate / pre-spawn seeding). ---
+// Bodies are verbatim from the pre-extraction inline routes; fleet-core
+// scripts/skills.js mounts them by name from system/skills.yaml.
+// Merge-confirm: accept/reject/distinct keel-origin merge proposals -> resolutions.json
+const skillHandler_merge = (req, res) => {
   try {
-    const staged = path.join(KEEL_DIR, 'exports', 'inbound', 'pending-edit.xlsx');
-    if (!fs.existsSync(staged)) return res.json({ ok: false, output: 'no pending portfolio edit - upload an edited export first' });
-    const out = execFileSync('python3', ['tools/apply_portfolio_edits.py', staged, '--commit'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 60000 });
-    return res.json({ ok: true, output: out });
+    const action = (req.query.action || '').toString();
+    if (!['accept','reject','distinct'].includes(action))
+      return res.json({ ok: false, output: 'action must be accept|reject|distinct' });
+    const keys = (req.query.keys || '').toString().split(/[\s,]+/).filter(Boolean);
+    const out = execFileSync('python3', ['tools/merge_accept.py', action, ...keys],
+                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
+    res.json({ ok: true, output: out });
   } catch (e) {
-    return res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
   }
-});
+};
 
-app.get('/run-apply-inference', requireAuth, (req, res) => {
+// Portfolio single-item query. ?q=<text> scored against all state/ item names.
+const skillHandler_find = (req, res) => {
   try {
-    const staged = path.join(KEEL_DIR, 'exports', 'inbound', 'pending-inference.xlsx');
-    if (!fs.existsSync(staged)) return res.json({ ok: false, output: 'no pending inference decisions - upload an Unconfirmed sheet with Decision cells filled first' });
-    const out = execFileSync('python3', ['tools/apply_inference_decisions.py', staged, '--commit'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 60000 });
-    return res.json({ ok: true, output: out });
+    const q = (req.query.q || '').toString();
+    if (!q.trim()) return res.json({ ok: false, output: 'usage: /find <feature or idea>' });
+    const out = execFileSync('python3', ['tools/find.py', q],
+                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
+    res.json({ ok: true, output: out });
   } catch (e) {
-    return res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
   }
-});
+};
+
+// Run apply (land reconcile proposals into state/). ?commit=1 writes; else dry-run.
+const skillHandler_apply = (req, res) => {
+  try {
+    const args = ['tools/apply.py'];
+    if (req.query.commit === '1') args.push('--commit');
+    const out = execFileSync('python3', args,
+                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 60000 });
+    res.json({ ok: true, output: out });
+  } catch (e) {
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+  }
+};
+
+// Full Northwind E2E demo (DESTRUCTIVE to demo state; confirm-gated). README-only -- no chip.
+const skillHandler_e2e = (req, res) => {
+  if ((req.query.confirm || '') !== '1') {
+    return res.json({ ok: true, output:
+      'RUN-E2E -- full pipeline demo on SYNTHETIC Northwind example data.\n' +
+      'DESTRUCTIVE: regenerates the demo corpus, OVERWRITES keel.config.json\n' +
+      '(SOURCE_KEY_PREFIX=NWR), reseeds knowledge/import/raw/, and drafts 25 demo\n' +
+      'items into state/. Do NOT run on a deployment holding real data.\n' +
+      'Suggested use: run once on a FRESH deployment before loading real data.\n' +
+      'Step 9 calls the LLM: ~30-60s (cloud), seconds (local GPU), several\n' +
+      'minutes (local CPU). The chat will wait -- do not resend.\n\n' +
+      'To proceed, type: /run-e2e confirm' });
+  }
+  try {
+    const out = execFileSync('bash', ['run_e2e.sh', '--yes'],
+                  { cwd: KEEL_DIR, encoding: 'utf8', timeout: 900000, maxBuffer: 10 * 1024 * 1024 });
+    res.json({ ok: true, output: out });
+  } catch (e) {
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+  }
+};
+
+// Run the deterministic ADO normalizer (no LLM; pure script).
+// Zero-arg: template defaults to agile; output -> state/normalized/ado.json.
+// Demo seed: if no ADO CSV is present, copy the shipped example so a fresh
+// clone demonstrates the lane. Touches only the gitignored import dir.
+const skillHandler_normalizeAdo = (req, res) => {
+  try {
+    const rawDir = path.join(KEEL_DIR, 'knowledge', 'import', 'raw');
+    fs.mkdirSync(rawDir, { recursive: true });
+    const hasAdo = fs.readdirSync(rawDir)
+      .some(f => f.toLowerCase().includes('ado') && f.toLowerCase().endsWith('.csv'));
+    let seeded = '';
+    if (!hasAdo) {
+      const example = path.join(KEEL_DIR, 'examples', 'northwind', 'ado_sample.csv');
+      if (fs.existsSync(example)) {
+        fs.copyFileSync(example, path.join(rawDir, 'ado_sample.csv'));
+        seeded = '(seeded demo ADO CSV from examples/northwind/ado_sample.csv)\n';
+      }
+    }
+    const out = execFileSync('python3', ['tools/normalize_ado.py'],
+                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
+    res.json({ ok: true, output: seeded + out });
+  } catch (e) {
+    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
+  }
+};
+
+// Skill/pipeline routes: mechanism in fleet-core scripts/skills.js, values in system/skills.yaml.
+skillsCore.mountSkills(app, { requireAuth, cwd: KEEL_DIR, handlers: {
+  merge: skillHandler_merge, find: skillHandler_find, apply: skillHandler_apply,
+  e2e: skillHandler_e2e, normalizeAdo: skillHandler_normalizeAdo,
+} });
 
 app.get('/export-multisource', requireAuth, (req, res) => {
   try {
@@ -568,173 +640,6 @@ app.get('/export-reconcile', requireAuth, (req, res) => {
     res.download(path.join(dir, latest), latest);
   } catch (e) {
     res.status(500).json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Semantic pass over reconcile's ambiguous bucket (LLM judge - slow lane).
-app.get('/run-reconcile-semantic', requireAuth, (req, res) => {
-  try {
-    const out = execFileSync('python3', ['tools/reconcile_semantic.py'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 260000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Full Northwind E2E demo (DESTRUCTIVE to demo state; confirm-gated). README-only -- no chip.
-app.get('/run-e2e', requireAuth, (req, res) => {
-  if ((req.query.confirm || '') !== '1') {
-    return res.json({ ok: true, output:
-      'RUN-E2E -- full pipeline demo on SYNTHETIC Northwind example data.\n' +
-      'DESTRUCTIVE: regenerates the demo corpus, OVERWRITES keel.config.json\n' +
-      '(SOURCE_KEY_PREFIX=NWR), reseeds knowledge/import/raw/, and drafts 25 demo\n' +
-      'items into state/. Do NOT run on a deployment holding real data.\n' +
-      'Suggested use: run once on a FRESH deployment before loading real data.\n' +
-      'Step 9 calls the LLM: ~30-60s (cloud), seconds (local GPU), several\n' +
-      'minutes (local CPU). The chat will wait -- do not resend.\n\n' +
-      'To proceed, type: /run-e2e confirm' });
-  }
-  try {
-    const out = execFileSync('bash', ['run_e2e.sh', '--yes'],
-                  { cwd: KEEL_DIR, encoding: 'utf8', timeout: 900000, maxBuffer: 10 * 1024 * 1024 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Merge-confirm: accept/reject/distinct keel-origin merge proposals -> resolutions.json
-app.get('/run-merge', requireAuth, (req, res) => {
-  try {
-    const action = (req.query.action || '').toString();
-    if (!['accept','reject','distinct'].includes(action))
-      return res.json({ ok: false, output: 'action must be accept|reject|distinct' });
-    const keys = (req.query.keys || '').toString().split(/[\s,]+/).filter(Boolean);
-    const out = execFileSync('python3', ['tools/merge_accept.py', action, ...keys],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Portfolio single-item query. ?q=<text> scored against all state/ item names.
-app.get('/run-find', requireAuth, (req, res) => {
-  try {
-    const q = (req.query.q || '').toString();
-    if (!q.trim()) return res.json({ ok: false, output: 'usage: /find <feature or idea>' });
-    const out = execFileSync('python3', ['tools/find.py', q],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Run apply (land reconcile proposals into state/). ?commit=1 writes; else dry-run.
-app.get('/run-apply', requireAuth, (req, res) => {
-  try {
-    const args = ['tools/apply.py'];
-    if (req.query.commit === '1') args.push('--commit');
-    const out = execFileSync('python3', args,
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 60000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Batch WSJF/RICE scoring: propose scores for ~3 batches per click (score_pass resumes).
-// Writes proposals to exports/score-proposals.json only; does NOT apply to item YAML.
-app.get('/run-score-all', requireAuth, (req, res) => {
-  try {
-    const out = execFileSync('python3', ['tools/score_pass.py', '--limit', '30'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 120000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Run the deterministic Jira normalizer (no LLM; pure script)
-app.get('/run-normalize-jira', requireAuth, (req, res) => {
-  try {
-    const out = execFileSync('python3', ['tools/normalize_jira.py'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Run the deterministic ADO normalizer (no LLM; pure script).
-// Zero-arg: template defaults to agile; output -> state/normalized/ado.json.
-// Demo seed: if no ADO CSV is present, copy the shipped example so a fresh
-// clone demonstrates the lane. Touches only the gitignored import dir.
-app.get('/run-normalize-ado', requireAuth, (req, res) => {
-  try {
-    const rawDir = path.join(KEEL_DIR, 'knowledge', 'import', 'raw');
-    fs.mkdirSync(rawDir, { recursive: true });
-    const hasAdo = fs.readdirSync(rawDir)
-      .some(f => f.toLowerCase().includes('ado') && f.toLowerCase().endsWith('.csv'));
-    let seeded = '';
-    if (!hasAdo) {
-      const example = path.join(KEEL_DIR, 'examples', 'northwind', 'ado_sample.csv');
-      if (fs.existsSync(example)) {
-        fs.copyFileSync(example, path.join(rawDir, 'ado_sample.csv'));
-        seeded = '(seeded demo ADO CSV from examples/northwind/ado_sample.csv)\n';
-      }
-    }
-    const out = execFileSync('python3', ['tools/normalize_ado.py'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: seeded + out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Run the deterministic reconcile (no LLM; pure script)
-app.get('/run-reconcile', requireAuth, (req, res) => {
-  try {
-    const out = execFileSync('python3', ['tools/reconcile.py'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Run the deterministic backlog normalizer (no LLM; pure script)
-app.get('/run-normalize', requireAuth, (req, res) => {
-  try {
-    const out = execFileSync('python3', ['tools/normalize_backlog.py'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Governance: verify the tamper-evident audit chain (scripts/audit-log.js).
-app.get('/run-audit-verify', requireAuth, (req, res) => {
-  try {
-    const out = execFileSync('node', ['scripts/audit-log.js', 'verify'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-});
-
-// Governance: recursive PII/secret scan over the repo (scripts/scan-tree.js).
-app.get('/run-scan-tree', requireAuth, (req, res) => {
-  try {
-    const out = execFileSync('node', ['scripts/scan-tree.js', '.'],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 60000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
   }
 });
 

@@ -1,0 +1,69 @@
+# Keel skill/pipeline registry -- VALUES only. The invocation MECHANISM (auth, spawn,
+# timeout, error shape, preconditions, record-to-state) is fleet-core scripts/skills.js.
+# handler: entries name functions that stay verbatim in webchat/server.js (bespoke
+# query mapping / confirm gates / pre-spawn seeding).
+skills:
+  - route: /run-apply-edits
+    bin: python3
+    args: [tools/apply_portfolio_edits.py, exports/inbound/pending-edit.xlsx, --commit]
+    timeout: 60000
+    requireFile: exports/inbound/pending-edit.xlsx
+    missingMsg: no pending portfolio edit - upload an edited export first
+    category: Portfolio
+  - route: /run-apply-inference
+    bin: python3
+    args: [tools/apply_inference_decisions.py, exports/inbound/pending-inference.xlsx, --commit]
+    timeout: 60000
+    requireFile: exports/inbound/pending-inference.xlsx
+    missingMsg: no pending inference decisions - upload an Unconfirmed sheet with Decision cells filled first
+    category: Portfolio
+  - route: /run-reconcile-semantic
+    bin: python3
+    args: [tools/reconcile_semantic.py]
+    timeout: 260000
+    category: Portfolio
+  - route: /run-score-all
+    bin: python3
+    args: [tools/score_pass.py, --limit, 30]
+    timeout: 120000
+    category: Portfolio
+  - route: /run-normalize-jira
+    bin: python3
+    args: [tools/normalize_jira.py]
+    timeout: 30000
+    category: Portfolio
+  - route: /run-reconcile
+    bin: python3
+    args: [tools/reconcile.py]
+    timeout: 30000
+    category: Portfolio
+  - route: /run-normalize
+    bin: python3
+    args: [tools/normalize_backlog.py]
+    timeout: 30000
+    category: Portfolio
+  - route: /run-audit-verify
+    bin: node
+    args: [scripts/audit-log.js, verify]
+    timeout: 30000
+    category: Governance
+  - route: /run-scan-tree
+    bin: node
+    args: [scripts/scan-tree.js, .]
+    timeout: 60000
+    category: Governance
+  - route: /run-merge
+    handler: merge
+    category: Portfolio
+  - route: /run-find
+    handler: find
+    category: Portfolio
+  - route: /run-apply
+    handler: apply
+    category: Portfolio
+  - route: /run-e2e
+    handler: e2e
+    category: Portfolio
+  - route: /run-normalize-ado
+    handler: normalizeAdo
+    category: Portfolio

@@ -807,12 +807,13 @@ wss.on('connection', (ws) => {
 
     // /compliance-report: refresh the deterministic evidence set (every record:
     // entry in system/skills.yaml) before the skill reads state/compliance/*.json.
+    // ASYNC (parallel execFile) so this server stays free to serve the edge-auth
+    // writer's own 403 probe; the turn starts once evidence lands.
     const _rcmd = prompt.trim();
-    if (_rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ')) {
-      skillsCore.refreshRecords(KEEL_DIR);
-    }
+    const _needsEvidence = _rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ');
 
-    const child = chatSession.runChatTurn(
+    let child = null;
+    const _startTurn = () => { child = chatSession.runChatTurn(
       { prompt, model: activeModel, cwd: KEEL_DIR, stateDir: path.join(KEEL_DIR, 'state'), env: process.env },
       (ev) => {
         if (ev.type === 'system' && ev.subtype === 'init') {
@@ -840,11 +841,13 @@ wss.on('connection', (ws) => {
         finish();
       }
     );
-
     child.on('error', (e) => {
       ws.send(JSON.stringify({ type: 'error', text: 'Failed to start: ' + e.message }));
       finish();
     });
+    };
+    if (_needsEvidence) { skillsCore.refreshRecordsAsync(KEEL_DIR, _startTurn); } else { _startTurn(); }
+
   });
 });
 

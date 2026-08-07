@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
 fleet_core_commit: 1d05c73
-synced_at: 2026-08-07T01:04:40Z
+synced_at: 2026-08-07T01:24:34Z
 manifest:
   b4b72b77aabb1b3d43774fcc717293d8448c87cbfedaf078a4398e742babb93f  ask.js
   5e677f3029d953542d2e716a6666e6244749883e848c09af6329b2272ff20dfc  audit.js

@@ -100,4 +100,31 @@ function refreshRecords(cwd) {
   return out;
 }
 
-module.exports = { mountSkills, loadSkills, runSkillSpawn, refreshRecords };
+// Async twin of refreshRecords: runs every record: entry in PARALLEL via execFile
+// so a server can await the refresh WITHOUT blocking its own event loop -- the
+// edge-auth writer probes the running server, which must stay free to serve the
+// 403. Persists identical {ok, output, ranAt} evidence shapes.
+function refreshRecordsAsync(cwd, cb) {
+  const { execFile } = require('child_process');
+  const entries = loadSkills(cwd).filter(s => s && s.record && s.bin);
+  if (!entries.length) return cb([]);
+  const out = []; let left = entries.length;
+  for (const s of entries) {
+    execFile(s.bin, (s.args || []).map(String), { cwd, encoding: 'utf8', timeout: s.timeout || 30000 },
+      (err, stdout, stderr) => {
+        const rec = err
+          ? { ok: false, output: (stdout || '') + (stderr || '') + String(err) }
+          : { ok: true, output: stdout };
+        rec.ranAt = new Date().toISOString();
+        try {
+          const dir = path.join(cwd, 'state', 'compliance');
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, s.record + '.json'), JSON.stringify(rec, null, 2));
+        } catch (e) { rec.persistError = String(e); }
+        out.push({ record: s.record, ok: rec.ok });
+        if (--left === 0) cb(out);
+      });
+  }
+}
+
+module.exports = { mountSkills, loadSkills, runSkillSpawn, refreshRecords, refreshRecordsAsync };

@@ -24,19 +24,23 @@ const PORT = parseInt(process.env.CASTOR_PORT || process.env.KEEL_PORT || '8443'
 function die(ok, lines) { console.log(lines.join('\n')); process.exit(ok ? 0 : 1); }
 
 function netIngress() {
-  const hexPort = PORT.toString(16).toUpperCase().padStart(4, '0');
+  // Containerized topology: the webchat binds 0.0.0.0 so the cloudflared sidecar
+  // container can reach it; isolation is the Docker network + deny-all NSG + no
+  // public IP (fleet-layer proof: fleetctl check --live). The honest in-container
+  // claim is SURFACE MINIMALITY: exactly one listening port -- the service port.
   let rows = [];
   for (const f of ['/proc/net/tcp', '/proc/net/tcp6']) {
     try { rows = rows.concat(fs.readFileSync(f, 'utf8').split('\n').slice(1)); } catch { /* absent */ }
   }
-  const listeners = rows.filter(r => r.includes(':' + hexPort + ' ') && r.trim().split(/\s+/)[3] === '0A');
-  if (!listeners.length) die(false, ['NET-INGRESS: no listener found on port ' + PORT]);
-  const bad = listeners.filter(r => {
-    const addr = r.trim().split(/\s+/)[1].split(':')[0];
-    return !(addr === '0100007F' || addr === '00000000000000000000000001000000');
-  });
-  if (bad.length) die(false, ['NET-INGRESS: port ' + PORT + ' bound beyond loopback (' + bad.length + ' listener(s))']);
-  die(true, ['NET-INGRESS: OK -- port ' + PORT + ' listens on loopback only; sole ingress is the Cloudflare tunnel']);
+  const ports = new Set();
+  for (const r of rows) {
+    const c = r.trim().split(/\s+/);
+    if (c[3] === '0A') ports.add(parseInt(c[1].split(':')[1], 16));
+  }
+  if (!ports.has(PORT)) die(false, ['NET-INGRESS: service port ' + PORT + ' has no listener']);
+  const extras = [...ports].filter(p => p !== PORT);
+  if (extras.length) die(false, ['NET-INGRESS: unexpected listener(s) on port(s) ' + extras.join(', ') + ' beyond the service port ' + PORT]);
+  die(true, ['NET-INGRESS: OK -- exactly one listening port (' + PORT + '); perimeter is Docker network + deny-all NSG + no public IP (fleet layer)']);
 }
 
 function edgeAuth() {

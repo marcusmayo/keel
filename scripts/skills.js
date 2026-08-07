@@ -87,4 +87,17 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
   return list.map(s => s.route);
 }
 
-module.exports = { mountSkills, loadSkills, runSkillSpawn };
+// Run every record: spawn entry in system/skills.yaml (the compliance evidence set).
+// Used by the /compliance-report pre-step so refreshing evidence stays declarative:
+// adding a writer to the yaml adds it to the report with no server.js change.
+function refreshRecords(cwd) {
+  const out = [];
+  for (const s of loadSkills(cwd)) {
+    if (!s || !s.record || !s.bin) continue;
+    const r = runSkillSpawn({ bin: s.bin, args: s.args, timeout: s.timeout, cwd, record: s.record });
+    out.push({ record: s.record, ok: r.ok });
+  }
+  return out;
+}
+
+module.exports = { mountSkills, loadSkills, runSkillSpawn, refreshRecords };

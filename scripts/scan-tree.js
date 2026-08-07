@@ -25,7 +25,12 @@ function walk(dir, out) {
   let entries;
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
   for (const e of entries) {
-    if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name), out); continue; }
+    if (e.isDirectory()) {
+      // state/compliance holds derived evidence records that quote finding samples
+      // verbatim -- scanning them re-flags the scanner's own output. Never inputs.
+      if (e.name === 'compliance' && path.basename(dir) === 'state') continue;
+      if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name), out); continue;
+    }
     if (SKIP_FILE.has(e.name)) continue;
     if (SKIP_EXT.has(path.extname(e.name).toLowerCase())) continue;
     out.push(path.join(dir, e.name));
@@ -44,7 +49,11 @@ function scan(root) {
       for (const [label, re] of PATTERNS) {
         re.lastIndex = 0;
         const m = re.exec(lines[i]);
-        if (m) findings.push({ file: f, line: i + 1, label, sample: m[0].slice(0, 12) + '…' });
+        if (m) {
+          // RFC 2606 reserved documentation domains are placeholders, not data.
+          if (label === 'EMAIL' && /@(example\.(com|org|net)|[^\s@]+\.(invalid|test))$/i.test(m[0])) continue;
+          findings.push({ file: f, line: i + 1, label, sample: m[0].slice(0, 12) + '…' });
+        }
       }
     }
   }

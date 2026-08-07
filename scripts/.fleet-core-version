@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 4108d20
-synced_at: 2026-08-07T00:17:22Z
+fleet_core_commit: 1d05c73
+synced_at: 2026-08-07T01:04:40Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
   f53f053ef876dace97661f7d76000e877b2aee36b130cc4b3bd902214a53ae5e  auth.js
@@ -10,7 +10,7 @@ manifest:
   a5f662f05037a3ee34b7d267b73ee88535fd149bf866fce3c06e928e1b0d3809  notify.js
   45430bf05995be7db800d7058844e050de4afc722b01c599d574eab3840b3bc2  redact.js
   bf4fac3071a1286debff9c83f604d1a940e46153cd7b653ea750da03e7f314e1  redaction-gate.js
-  b139287935bd6b88289f2962999cfd235fb21b6887c7db8b721155d2a34122ec  scan-tree.js
+  5aa5f010367057bdf9c000c839b48815d57055c1e18adb44b72081b63e3e7d19  scan-tree.js
   7500ee711a24e23d3cc6b63335aff7a9be43eed40bad4fe508963d0efabffe6a  capabilities-shared.yaml
   b5289e424bfee1f2be32ab48b8649bb06d653025d4ae4b8faa8db7e359aa97f5  telegram-bot.js
   470b7a4f2f79e827c041fc74f75bb9c35664d9093d02975a85f74a88264b5b45  send-email.js
@@ -18,4 +18,5 @@ manifest:
   ecce2b9f6fd7adf798a144ed6313e73bf484d2ecfc851f6208d7f59a279c5c73  chat-session.js
   e9d1172c8393f52a84c96a2020b9a1306e86ef5fe1da77b1f408f62337ffe0c5  webchat-controls.js
   0c611a56d4188bf1ef692765a490bd50316a30ab91ba9c8af4b1010c8add0d27  webchat-ops.js
-  a6d5f380ee8bf185a09db5a6d3392203d04b4396229598a8ce8ebece2b71f0bc  skills.js
+  b9f35f0c638daaa7a030c5fa54e6bc4141d5e930eef713dd3fe1ab6e55911a9e  skills.js
+  64061e10edb55351c11536f116e713f0505cc748844d6ef1ac5b93763b3140e2  compliance-checks.js

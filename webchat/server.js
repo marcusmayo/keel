@@ -805,6 +805,13 @@ wss.on('connection', (ws) => {
     let done = false;
     const finish = () => { if (done) return; done = true; ws.send(JSON.stringify({ type: 'done' })); };
 
+    // /compliance-report: refresh the deterministic evidence set (every record:
+    // entry in system/skills.yaml) before the skill reads state/compliance/*.json.
+    const _rcmd = prompt.trim();
+    if (_rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ')) {
+      skillsCore.refreshRecords(KEEL_DIR);
+    }
+
     const child = chatSession.runChatTurn(
       { prompt, model: activeModel, cwd: KEEL_DIR, stateDir: path.join(KEEL_DIR, 'state'), env: process.env },
       (ev) => {

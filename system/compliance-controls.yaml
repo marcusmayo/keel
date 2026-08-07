@@ -1,0 +1,28 @@
+# Fleet compliance control set -- read by the /compliance-report skill together with
+# state/compliance/<evidence>.json. Mechanism: fleet-core scripts/compliance-checks.js
+# writers, refreshed via scripts/skills.js refreshRecords before every report.
+controls:
+  - n: 1
+    name: Network ingress (loopback bind; Cloudflare tunnel is the sole path)
+    evidence: net-ingress
+  - n: 2
+    name: Edge authentication (Cloudflare Access sole factor; no app-TOTP)
+    evidence: edge-auth
+  - n: 3
+    name: PII redaction (ingest tripwire; weekly scan)
+    evidence: pii-redaction
+  - n: 4
+    name: Secrets hygiene (repo secret/PII scan; Key Vault via managed identity)
+    evidence: secret-scan
+  - n: 5
+    name: Backup (capability-declared)
+    evidence: backup
+  - n: 6
+    name: Kill switch (fleet pause -- az vm deallocate)
+    evidence: fleet-pause
+  - n: 7
+    name: Vulnerability management (npm audit, production deps)
+    evidence: vuln-audit
+  - n: 8
+    name: Audit chain integrity
+    evidence: audit-verify

@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
 fleet_core_commit: 1d05c73
-synced_at: 2026-08-07T01:24:34Z
+synced_at: 2026-08-07T01:43:16Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
   f53f053ef876dace97661f7d76000e877b2aee36b130cc4b3bd902214a53ae5e  auth.js
@@ -19,4 +19,4 @@ manifest:
   e9d1172c8393f52a84c96a2020b9a1306e86ef5fe1da77b1f408f62337ffe0c5  webchat-controls.js
   0c611a56d4188bf1ef692765a490bd50316a30ab91ba9c8af4b1010c8add0d27  webchat-ops.js
   8c574ca934b0ba424d023a8a67c98d8a7bc518582dc06a253ba0a25af1bb6372  skills.js
-  65f10e0dce5f863157bcc22b988af883c67ea8c2f4548c0718d8b9c0c22bb9cb  compliance-checks.js
+  52c7a72f839024b5bc9a7f9d385f0ef439f851fed070f2fdaadfb602a0cedad3  compliance-checks.js

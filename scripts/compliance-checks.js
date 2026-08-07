@@ -35,7 +35,11 @@ function netIngress() {
   const ports = new Set();
   for (const r of rows) {
     const c = r.trim().split(/\s+/);
-    if (c[3] === '0A') ports.add(parseInt(c[1].split(':')[1], 16));
+    if (c[3] !== '0A') continue;
+    // 127.0.0.11 is Docker's embedded DNS resolver (dockerd infrastructure,
+    // present in every container network namespace) -- not app surface.
+    if (c[1].split(':')[0] === '0B00007F') continue;
+    ports.add(parseInt(c[1].split(':')[1], 16));
   }
   if (!ports.has(PORT)) die(false, ['NET-INGRESS: service port ' + PORT + ' has no listener']);
   const extras = [...ports].filter(p => p !== PORT);

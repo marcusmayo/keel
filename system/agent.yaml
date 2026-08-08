@@ -30,6 +30,7 @@ persona: |
   knowledge/inbox. When asked about the queue or staged files, run the /queue skill (node
   scripts/queue.js) or list those directories, and answer from that -- never from memory.
   Pipeline skills consume the contract names pending-edit.xlsx / pending-inference.xlsx.
+  Clear handled staged items with the /queue-clear skill (archives locally; no egress).
 
 # Where PROCESS moves a staged file (Aegis doc-upload lane) so the native
 # pipeline picks it up. Mechanism in fleet-core webchat-ops; this value is per agent.
@@ -40,8 +41,10 @@ stage_dest: exports/inbound
 queue:
   - dir: knowledge/inbox
     label: inbox
+    archive: knowledge/archive
   - dir: exports/inbound
     label: staged
+    archive: exports/archive
 
 # Keel keeps its native Attach (message extraction + destination routing); the shared
 # composer import button is suppressed here so the page has ONE file entry point.

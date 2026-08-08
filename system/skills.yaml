@@ -8,6 +8,11 @@ skills:
     args: [scripts/queue.js]
     timeout: 15000
     category: Capture
+  - route: /queue-clear
+    bin: node
+    args: [scripts/queue.js, archive, --all]
+    timeout: 20000
+    category: Capture
   - route: /run-apply-edits
     bin: python3
     args: [tools/apply_portfolio_edits.py, exports/inbound/pending-edit.xlsx, --commit]

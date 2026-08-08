@@ -80,7 +80,7 @@
   </div>
   <div id="log"></div>
   <footer>
-    <textarea id="input" rows="1" placeholder="Ask Keel… (e.g. /briefing, or paste a note for /triage)"></textarea>
+    <textarea id="input" rows="1" placeholder="Ask {{AGENT_NAME}}… (e.g. /briefing, or paste a note for /triage)"></textarea>
     <input type="file" id="fileinput" accept=".pdf,.csv,.docx,.xlsx,.txt,.md,.png,.jpg,.jpeg,.webp,.gif" style="display:none" onchange="uploadFile()">
     <button id="attach" onclick="document.getElementById('fileinput').click()" title="Attach .docx .xlsx .txt .md">Attach</button>
     <button id="send" onclick="send()">Send</button>

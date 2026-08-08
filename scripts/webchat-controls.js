@@ -112,50 +112,40 @@
   }
   function ensurePersonaBtn(){if(document.getElementById('personaBtn'))return;var wb=document.getElementById('webToggle');if(!wb||!wb.parentNode)return;var b=document.createElement('button');b.id='personaBtn';b.textContent='persona';b.title='View/edit this agent\u2019s persona (override wins over the repo default)';b.style.cssText='margin-right:8px;background:none;border:1px solid #333;border-radius:6px;padding:4px 8px;cursor:pointer;font:inherit;color:#aaa';b.onclick=editPersona;wb.parentNode.insertBefore(b,wb);}
 
-  // Import lane UI: mirrors the Aegis card import against the fleet-core
-  // /files endpoints every agent already serves (stage -> staged -> Process
-  // hands the file to this agent's pipeline dir). Mechanism in core; the
-  // destination is the agent's own stage_dest.
-  async function importOverlay(){
-    var ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:99;display:flex;align-items:center;justify-content:center';
-    var box=document.createElement('div');
-    box.style.cssText='background:#111;border:1px solid #333;border-radius:8px;padding:14px;width:min(560px,92vw);color:#ddd;font:13px/1.5 ui-monospace,monospace';
-    box.innerHTML='<div style="margin-bottom:8px">Import \u2014 stage a file; Process hands it to this agent\u2019s pipeline dir.</div>'
-      +'<div style="display:flex;gap:8px;align-items:center"><input type="file" id="impFile" style="flex:1 1 0%;min-width:0;color:#bbb"><button id="impStageBtn">Stage</button></div>'
-      +'<div id="impListBox" style="margin-top:10px;color:#aaa">loading staged\u2026</div>'
-      +'<div style="margin-top:10px;display:flex;justify-content:flex-end"><button id="impClose">Close</button></div>';
-    ov.appendChild(box);document.body.appendChild(ov);
-    document.getElementById('impClose').onclick=function(){ov.remove();};
-    async function list(){
-      var el=document.getElementById('impListBox'); if(!el)return;
-      try{var r=await(await fetch('/files/staged')).json();
-        if(!r||!r.ok){el.textContent='staged list unavailable';return;}
-        el.innerHTML=((r.files||[]).map(function(x){return x.name+' ('+x.bytes+'b) <button data-n="'+x.name.replace(/"/g,'')+'" class="impProc">Process \u2192 '+r.dest+'</button>';}).join('<br>'))||'(nothing staged)';
-        Array.prototype.forEach.call(el.querySelectorAll('.impProc'),function(btn){btn.onclick=async function(){
-          try{var rr=await(await fetch('/files/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:btn.getAttribute('data-n')})})).json();
-            notify(rr&&rr.ok?rr.message:('process failed: '+((rr&&rr.error)||'unknown')),rr&&rr.ok?'sys':'err');
-          }catch(e){notify('process failed: '+e,'err');}
-          list();
-        };});
-      }catch(e){el.textContent='staged list unavailable: '+e;}
-    }
-    document.getElementById('impStageBtn').onclick=function(){
-      var f=(document.getElementById('impFile').files||[])[0];
-      if(!f){notify('choose a file first','err');return;}
-      var rd=new FileReader();
-      rd.onload=async function(){
-        var b64=String(rd.result).split(',')[1]||'';
-        try{var r=await(await fetch('/files/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name,dataBase64:b64})})).json();
-          notify(r&&r.ok?r.message:('stage failed: '+((r&&r.error)||'unknown')),r&&r.ok?'sys':'err');
-        }catch(e){notify('stage failed: '+e,'err');}
-        list();
+  // Import lane UI: one-motion import against the fleet-core /files endpoints
+  // every agent serves. Click -> OS file picker -> stage+process in a single
+  // step -> the file lands in this agent's pipeline dir (system/agent.yaml
+  // stage_dest). Mechanism in core; the destination is per agent. The staged
+  // intermediate remains a first-class step on the Aegis card, where the
+  // control plane wants the granularity; the webchat gets the direct flow.
+  function importPick(){
+    var inp=document.getElementById('importFileInput');
+    if(!inp){
+      inp=document.createElement('input');inp.type='file';inp.id='importFileInput';inp.style.display='none';document.body.appendChild(inp);
+      inp.onchange=function(){
+        var f=(inp.files||[])[0]; inp.value=''; if(!f)return;
+        var b=document.getElementById('importBtn'); if(b){b.disabled=true;b.textContent='importing\u2026';}
+        var done=function(){if(b){b.disabled=false;b.textContent='import';}};
+        var rd=new FileReader();
+        rd.onload=async function(){
+          var b64=String(rd.result).split(',')[1]||'';
+          try{
+            var r=await(await fetch('/files/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name,dataBase64:b64})})).json();
+            if(!(r&&r.ok)) throw new Error((r&&r.error)||'stage failed');
+            var rr=await(await fetch('/files/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:r.name})})).json();
+            if(!(rr&&rr.ok)) throw new Error((rr&&rr.error)||'process failed');
+            notify('imported: '+rr.message,'sys');
+          }catch(e){notify('import failed: '+(e&&e.message||e),'err');}
+          done();
+          try{if(typeof window.loadPending==='function')window.loadPending();}catch(_e){}
+        };
+        rd.onerror=function(){notify('import failed: could not read file','err');done();};
+        rd.readAsDataURL(f);
       };
-      rd.readAsDataURL(f);
-    };
-    list();
+    }
+    inp.click();
   }
-  function ensureImportBtn(){if(document.getElementById('importBtn'))return;var wb=document.getElementById('webToggle');if(!wb||!wb.parentNode)return;var b=document.createElement('button');b.id='importBtn';b.textContent='import';b.title='Stage a file to this agent; Process hands it to the pipeline dir';b.style.cssText='margin-right:8px;background:none;border:1px solid #333;border-radius:6px;padding:4px 8px;cursor:pointer;font:inherit;color:#aaa';b.onclick=importOverlay;wb.parentNode.insertBefore(b,wb);}
+  function ensureImportBtn(){if(document.getElementById('importBtn'))return;var s=document.getElementById('send')||document.querySelector('button.send');if(!s||!s.parentNode)return;var b=document.createElement('button');b.id='importBtn';b.textContent='import';b.title='Import a file into this agent\u2019s pipeline (stage+process in one step; lands in the profile\u2019s intake dir)';b.style.cssText='background:#262626;color:#bbb;border:0;border-radius:8px;padding:0 16px;font-size:13px;cursor:pointer;margin-right:8px';b.onclick=importPick;s.parentNode.insertBefore(b,s);}
 
   window.toggleWeb = toggleWeb;
   window.newConversation = newConversation;

@@ -29,3 +29,11 @@ persona: |
 # Where PROCESS moves a staged file (Aegis doc-upload lane) so the native
 # pipeline picks it up. Mechanism in fleet-core webchat-ops; this value is per agent.
 stage_dest: exports/inbound
+
+# Queue visibility (fleet-core queue.js): non-dot files in these dirs count as queued.
+# Mechanism in core; these VALUES are per agent.
+queue:
+  - dir: knowledge/inbox
+    label: inbox
+  - dir: exports/inbound
+    label: staged

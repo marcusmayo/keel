@@ -50,6 +50,7 @@ const modelRouting = require('../scripts/model-routing');
 const chatSession = require('../scripts/chat-session.js');
 const chatOps = require('../scripts/webchat-ops.js');
 const skillsCore = require('../scripts/skills.js');
+const queueCore = require('../scripts/queue.js');
 
 
 const app = express();
@@ -91,14 +92,11 @@ app.get('/color', requireAuth, (req, res) => res.json({ ok: true, accent: readAc
 
 // Pending-queue count for the Aegis fleet card (count-in-Aegis / review-in-agent, per the
 // domain division). Pending = staged-but-unprocessed inputs: triage files in knowledge/inbox/
-// plus staged inbound workbooks (exports/inbound/pending-*.xlsx) awaiting process-on-command.
+// plus everything staged in exports/inbound awaiting a command (fleet-core queue.js reads
+// the per-agent dirs from system/agent.yaml -- mechanism in core, values per agent).
 app.get('/pending', requireAuth, (req, res) => {
-  try {
-    const list = (dir, pred) => { try { return fs.readdirSync(dir).filter((f) => !f.startsWith('.') && (!pred || pred(f))); } catch { return []; } };
-    const inbox = list(path.join(KEEL_DIR, 'knowledge', 'inbox'));
-    const staged = list(path.join(KEEL_DIR, 'exports', 'inbound'), (f) => /^pending-.*\.xlsx$/i.test(f));
-    res.json({ ok: true, items: [...inbox.map((f) => 'inbox/' + f), ...staged.map((f) => 'staged/' + f)] });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  try { res.json({ ok: true, items: queueCore.listQueue(KEEL_DIR).map((i) => i.label + '/' + i.name) }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 // Shared webchat control endpoints (model / model-select / web-access / persona / session)
 // live in fleet-core so they can't drift between agents. /color stays here (per-agent accent).

@@ -174,8 +174,16 @@ function mountChatOps(app, opts) {
     const name = safeFile((req.body || {}).name);
     const src = path.join(STAGE_DIR, name);
     if (!name || !fs2.existsSync(src)) return res.status(404).json({ ok: false, error: 'not staged: ' + name });
-    fs2.mkdirSync(STAGE_DEST, { recursive: true });
-    fs2.renameSync(src, path.join(STAGE_DEST, name));
+    try {
+      fs2.mkdirSync(STAGE_DEST, { recursive: true });
+      // copy+unlink, not rename: staging (state volume) and the pipeline dir are
+      // different filesystems on both profiles, and rename() cannot cross devices (EXDEV).
+      const dst = path.join(STAGE_DEST, name);
+      fs2.copyFileSync(src, dst);
+      fs2.unlinkSync(src);
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: 'process failed: ' + e.message });
+    }
     audit({ event: 'file-process', name, dest: STAGE_DEST_REL });
     res.json({ ok: true, name, message: name + ' -> ' + STAGE_DEST_REL + ' — the profile pipeline takes it from here' });
   });

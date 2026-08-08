@@ -111,6 +111,33 @@ function mountChatOps(app, opts) {
     chatSession.writeWebAccess(stateDir, enabled);
     res.json({ ok: true, enabled, message: 'Web research ' + (enabled ? 'ENABLED' : 'DISABLED') + ' (applies to the next message).' });
   });
+
+  // Fleet protection: MIRROR + REQUEST lane only. The authoritative state is the
+  // workstation policy file behind the attested `fleetctl policy set` ceremony;
+  // Aegis pushes the mirror here after a successful ceremony, and the webchat may
+  // only RECORD a change request for the operator to complete in Aegis
+  // (propose-don't-mutate: an agent can never unprotect itself).
+  const fs2 = require('node:fs');
+  const protFile = path.join(stateDir, 'protection.json');
+  const readProt = () => { try { return { protected: false, requested: null, ...JSON.parse(fs2.readFileSync(protFile, 'utf8')) }; } catch { return { protected: false, requested: null }; } };
+  const writeProt = (o) => { try { fs2.mkdirSync(stateDir, { recursive: true }); fs2.writeFileSync(protFile, JSON.stringify(o)); } catch { /* best effort */ } };
+  app.get('/protection', requireAuth, (req, res) => res.json({ ok: true, ...readProt() }));
+  app.post('/protection', requireAuth, (req, res) => {
+    const b = req.body || {};
+    const cur = readProt();
+    if (typeof b.protected === 'boolean') {
+      const requested = (cur.requested === (b.protected ? 'protect' : 'unprotect')) ? null : cur.requested;
+      const next = { protected: b.protected, requested };
+      writeProt(next); audit({ event: 'protection-mirror', protected: b.protected });
+      return res.json({ ok: true, ...next });
+    }
+    if (b.request === 'protect' || b.request === 'unprotect') {
+      const next = { protected: cur.protected, requested: b.request };
+      writeProt(next); audit({ event: 'protection-request', request: b.request });
+      return res.json({ ok: true, ...next, message: 'Protection ' + b.request + ' requested — complete the attested ceremony in Aegis.' });
+    }
+    return res.status(400).json({ ok: false, error: 'body must be {protected:boolean} (Aegis mirror) or {request:"protect"|"unprotect"}' });
+  });
 }
 
 module.exports = { mountChatOps, modelLabel, MODEL_LABELS };

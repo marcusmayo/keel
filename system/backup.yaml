@@ -10,5 +10,5 @@ volumes:
   - keel_keel-support
   - keel_keel-claude
 containers:
-  - keel_keel-webchat
-  - keel_keel-gateway
+  - keel-webchat
+  - keel-gateway

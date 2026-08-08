@@ -178,3 +178,23 @@ capabilities:
       - The vision model is changeable like the text tiers:
           node scripts/model-routing.js set-vision --model claude-sonnet-4-6
     verify: fetch-secret vision-api-key
+
+# ---------------------------------------------------------------------------
+# Bootstrap secrets by profile (seeded by `fleetctl set-secrets`; fetched by each
+# repo's infra/scripts/bootstrap.sh at first boot via managed identity). The
+# seeder maps its two env inputs (ANTHROPIC_API_KEY, OPENROUTER_API_KEY) onto
+# profile-native vault names -- keep this table and the bootstraps in agreement.
+bootstrap_secrets:
+  keel:
+    - anthropic-api-key      # <- ANTHROPIC_API_KEY
+    - openrouter-api-key     # <- OPENROUTER_API_KEY
+  castor:
+    - model-api-key          # <- OPENROUTER_API_KEY (gateway lane)
+    - vision-api-key         # <- ANTHROPIC_API_KEY (direct vision path)
+    - anthropic-api-key      # <- ANTHROPIC_API_KEY (optional web-direct enabler)
+
+# Fleet backup (azure_backup, fleet-store edition): one storage account in
+# rg-fleet-backups (create once: `fleetctl backup init`), container per agent,
+# nightly on-VM timer runs core/backup-push.sh (MSI auth; values from each
+# agent's system/backup.yaml). decommission --go banks a final snapshot as
+# surface 0; `fleetctl restore <agent>` pulls the newest blob onto a rebuild.

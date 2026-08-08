@@ -1,0 +1,14 @@
+# Fleet backup values for this agent (mechanism: fleet-core backup-push.sh).
+# paths   -- repo-relative dirs to include (rarely needed; state lives in volumes)
+# volumes -- docker named volumes to include
+# containers -- restarted after a restore
+paths: []
+volumes:
+  - keel-state
+  - keel-knowledge
+  - keel-logs
+  - keel-support
+  - keel-claude
+containers:
+  - keel-webchat
+  - keel-gateway

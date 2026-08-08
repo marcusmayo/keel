@@ -1,22 +1,23 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 1d05c73
-synced_at: 2026-08-07T01:43:16Z
+fleet_core_commit: f95a2df+dirty
+synced_at: 2026-08-08T13:38:04Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
   f53f053ef876dace97661f7d76000e877b2aee36b130cc4b3bd902214a53ae5e  auth.js
+  097ce5fcb08114ebde15f5d5296f8166deedc10aec4d556a25c26565f6f2db03  backup-push.sh
+  a0815b78356875d9936a7dd3185a96e8ba59f5e2bacc54db995d8504e603b93b  capabilities-shared.yaml
   acf2aa742a58c5a98549ec6e0ac76ee3d376e27126b76e462a79287e2453a099  capability.js
+  ecce2b9f6fd7adf798a144ed6313e73bf484d2ecfc851f6208d7f59a279c5c73  chat-session.js
+  52c7a72f839024b5bc9a7f9d385f0ef439f851fed070f2fdaadfb602a0cedad3  compliance-checks.js
+  6d8da9a9fc29e8843f6574171fda14081721cdf0119e2821b8049c3240c179db  fetch-secret.sh
   6516adafc9293e98d5453b6a86e74d73011f2e223122fd257ba99b319e9fa9f1  health-check.js
   a87c9e8d529e78c0c6244d41e3014714ad3b847c6a9180e98a504a7ddd79b506  model-routing.js
   a5f662f05037a3ee34b7d267b73ee88535fd149bf866fce3c06e928e1b0d3809  notify.js
   45430bf05995be7db800d7058844e050de4afc722b01c599d574eab3840b3bc2  redact.js
   bf4fac3071a1286debff9c83f604d1a940e46153cd7b653ea750da03e7f314e1  redaction-gate.js
   5aa5f010367057bdf9c000c839b48815d57055c1e18adb44b72081b63e3e7d19  scan-tree.js
-  7500ee711a24e23d3cc6b63335aff7a9be43eed40bad4fe508963d0efabffe6a  capabilities-shared.yaml
-  b5289e424bfee1f2be32ab48b8649bb06d653025d4ae4b8faa8db7e359aa97f5  telegram-bot.js
   470b7a4f2f79e827c041fc74f75bb9c35664d9093d02975a85f74a88264b5b45  send-email.js
-  6d8da9a9fc29e8843f6574171fda14081721cdf0119e2821b8049c3240c179db  fetch-secret.sh
-  ecce2b9f6fd7adf798a144ed6313e73bf484d2ecfc851f6208d7f59a279c5c73  chat-session.js
+  8c574ca934b0ba424d023a8a67c98d8a7bc518582dc06a253ba0a25af1bb6372  skills.js
+  b5289e424bfee1f2be32ab48b8649bb06d653025d4ae4b8faa8db7e359aa97f5  telegram-bot.js
   e9d1172c8393f52a84c96a2020b9a1306e86ef5fe1da77b1f408f62337ffe0c5  webchat-controls.js
   0c611a56d4188bf1ef692765a490bd50316a30ab91ba9c8af4b1010c8add0d27  webchat-ops.js
-  8c574ca934b0ba424d023a8a67c98d8a7bc518582dc06a253ba0a25af1bb6372  skills.js
-  52c7a72f839024b5bc9a7f9d385f0ef439f851fed070f2fdaadfb602a0cedad3  compliance-checks.js

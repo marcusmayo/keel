@@ -4,11 +4,11 @@
 # containers -- restarted after a restore
 paths: []
 volumes:
-  - keel-state
-  - keel-knowledge
-  - keel-logs
-  - keel-support
-  - keel-claude
+  - keel_keel-state
+  - keel_keel-knowledge
+  - keel_keel-logs
+  - keel_keel-support
+  - keel_keel-claude
 containers:
-  - keel-webchat
-  - keel-gateway
+  - keel_keel-webchat
+  - keel_keel-gateway

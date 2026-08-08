@@ -72,7 +72,7 @@
       if(d&&d.ok){MODELS=d.options||[];MODEL_ACTIVE=d.active||null;WEB_ON=!!d.webActive;}
       renderWeb();renderModelSel();
     }).catch(()=>{renderWeb();const bar=document.getElementById('modelbar');if(bar)bar.textContent='model: (unavailable)';});
-    ensureProtBadge();renderProt();syncProt();
+    ensureProtBadge();renderProt();syncProt();ensurePersonaBtn();
     setInterval(syncWeb,8000);
     setInterval(syncProt,8000);
   }
@@ -85,6 +85,32 @@
   function ensureProtBadge(){if(document.getElementById('protBadge'))return;var wb=document.getElementById('webToggle');if(!wb||!wb.parentNode)return;var b=document.createElement('button');b.id='protBadge';b.style.cssText='margin-right:8px;background:none;border:1px solid #333;border-radius:6px;padding:4px 8px;cursor:pointer;font:inherit;color:#aaa';b.onclick=toggleProt;wb.parentNode.insertBefore(b,wb);}
   async function syncProt(){try{var r=await(await fetch('/protection')).json();if(r&&r.ok){PROT={protected:!!r.protected,requested:r.requested||null};renderProt();}}catch(e){}}
   async function toggleProt(){var want=PROT.protected?'unprotect':'protect';try{var r=await(await fetch('/protection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request:want})})).json();if(r&&r.ok){PROT={protected:!!r.protected,requested:r.requested||null};renderProt();notify(r.message||('Protection '+want+' requested \u2014 complete the attested ceremony in Aegis.'),'sys');}else{notify('Protection request failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){notify('Protection request failed: '+e,'err');}}
+
+  // Persona editor: view/edit the agent's conversational identity in place.
+  // Values live per agent (state/persona.txt override wins over the baked default).
+  async function editPersona(){
+    try{
+      var r=await(await fetch('/persona')).json();
+      var cur=(r&&(r.persona||r.text))||'';
+      var ov=document.createElement('div');
+      ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:99;display:flex;align-items:center;justify-content:center';
+      var box=document.createElement('div');
+      box.style.cssText='background:#111;border:1px solid #333;border-radius:8px;padding:14px;width:min(680px,92vw)';
+      box.innerHTML='<div style="margin-bottom:6px;color:#ddd">Persona'+(r&&r.custom?' <span style="color:#f59e0b">(custom override active)</span>':'')+'</div>'
+        +'<textarea id="personaTa" style="width:100%;height:220px;background:#0a0a0a;color:#eee;border:1px solid #2a2a2a;border-radius:6px;padding:8px;font:12px/1.5 ui-monospace,monospace"></textarea>'
+        +'<div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end"><button id="personaCancel">Cancel</button><button id="personaSave">Save</button></div>';
+      ov.appendChild(box);document.body.appendChild(ov);
+      document.getElementById('personaTa').value=cur;
+      document.getElementById('personaCancel').onclick=function(){ov.remove();};
+      document.getElementById('personaSave').onclick=async function(){
+        try{var rr=await(await fetch('/persona',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({persona:document.getElementById('personaTa').value})})).json();
+          notify(rr&&rr.ok?'Persona saved (override active; applies to the next message).':'Persona save failed: '+((rr&&rr.error)||'unknown'),rr&&rr.ok?'sys':'err');
+        }catch(e){notify('Persona save failed: '+e,'err');}
+        ov.remove();
+      };
+    }catch(e){notify('Persona load failed: '+e,'err');}
+  }
+  function ensurePersonaBtn(){if(document.getElementById('personaBtn'))return;var wb=document.getElementById('webToggle');if(!wb||!wb.parentNode)return;var b=document.createElement('button');b.id='personaBtn';b.textContent='persona';b.title='View/edit this agent\u2019s persona (override wins over the repo default)';b.style.cssText='margin-right:8px;background:none;border:1px solid #333;border-radius:6px;padding:4px 8px;cursor:pointer;font:inherit;color:#aaa';b.onclick=editPersona;wb.parentNode.insertBefore(b,wb);}
 
   window.toggleWeb = toggleWeb;
   window.newConversation = newConversation;

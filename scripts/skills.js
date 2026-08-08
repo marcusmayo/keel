@@ -84,6 +84,10 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
       res.json(runSkillSpawn({ bin: s.bin, args: s.args, timeout: s.timeout, cwd, record: s.record }));
     });
   }
+  // Panel-facing catalogue: the same declarative list, minus spawn internals.
+  app.get('/skills', requireAuth, (req, res) => res.json({ ok: true, skills: list.map(x => ({
+    route: x.route, method: (x.method || 'get').toUpperCase(), name: x.name || x.route, summary: x.summary || x.desc || '',
+  })) }));
   return list.map(s => s.route);
 }
 

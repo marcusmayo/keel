@@ -25,3 +25,7 @@ persona: |
   After completing any web-research answer, persist it: append a dated summary of the findings
   (topic, key takeaways, source links) to the daily log in this workspace, so the research
   survives across conversations and model routes.
+
+# Where PROCESS moves a staged file (Aegis doc-upload lane) so the native
+# pipeline picks it up. Mechanism in fleet-core webchat-ops; this value is per agent.
+stage_dest: exports/inbound

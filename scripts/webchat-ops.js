@@ -138,6 +138,47 @@ function mountChatOps(app, opts) {
     }
     return res.status(400).json({ ok: false, error: 'body must be {protected:boolean} (Aegis mirror) or {request:"protect"|"unprotect"}' });
   });
+
+  // Staged-file lane: Aegis uploads land in state/staging; PROCESS hands the file
+  // to the profile's native pipeline dir -- mechanism in core, destination per
+  // agent (system/agent.yaml stage_dest: keel exports/inbound, castor inbox/drop).
+  // Zero-dep read of the one flat key we need; a broken/missing agent.yaml makes
+  // PROCESS refuse (fail-closed) rather than silently misroute into a dir nothing watches.
+  let stageYamlErr = null, STAGE_DEST_REL = 'inbox';
+  try {
+    const rawY = fs2.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8');
+    const mY = rawY.match(/^stage_dest:\s*([^\s#]+)/m);
+    if (mY) STAGE_DEST_REL = mY[1];
+  } catch (e) { stageYamlErr = 'cannot read system/agent.yaml: ' + e.message; }
+  const STAGE_DIR = path.join(stateDir, 'staging');
+  const STAGE_DEST = path.join(cwd, STAGE_DEST_REL);
+  const safeFile = (n) => String(n || '').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
+  let bigJson = null; try { bigJson = require('express').json({ limit: '25mb' }); } catch { /* default body limit applies */ }
+  app.get('/files/staged', requireAuth, (req, res) => {
+    let files = [];
+    try { files = fs2.readdirSync(STAGE_DIR).map((f) => ({ name: f, bytes: fs2.statSync(path.join(STAGE_DIR, f)).size })); } catch { /* none yet */ }
+    res.json({ ok: true, dest: STAGE_DEST_REL, files });
+  });
+  app.post('/files/stage', requireAuth, ...(bigJson ? [bigJson] : []), (req, res) => {
+    const b = req.body || {};
+    const name = safeFile(b.name);
+    if (!name || typeof b.dataBase64 !== 'string') return res.status(400).json({ ok: false, error: 'need {name, dataBase64}' });
+    let buf; try { buf = Buffer.from(b.dataBase64, 'base64'); } catch { return res.status(400).json({ ok: false, error: 'bad base64' }); }
+    fs2.mkdirSync(STAGE_DIR, { recursive: true });
+    fs2.writeFileSync(path.join(STAGE_DIR, name), buf);
+    audit({ event: 'file-stage', name, bytes: buf.length });
+    res.json({ ok: true, name, bytes: buf.length, message: 'staged ' + name + ' (' + buf.length + ' bytes) — Process moves it to ' + STAGE_DEST_REL });
+  });
+  app.post('/files/process', requireAuth, (req, res) => {
+    if (stageYamlErr) return res.status(500).json({ ok: false, error: stageYamlErr + ' — refusing to move (stage_dest unknown)' });
+    const name = safeFile((req.body || {}).name);
+    const src = path.join(STAGE_DIR, name);
+    if (!name || !fs2.existsSync(src)) return res.status(404).json({ ok: false, error: 'not staged: ' + name });
+    fs2.mkdirSync(STAGE_DEST, { recursive: true });
+    fs2.renameSync(src, path.join(STAGE_DEST, name));
+    audit({ event: 'file-process', name, dest: STAGE_DEST_REL });
+    res.json({ ok: true, name, message: name + ' -> ' + STAGE_DEST_REL + ' — the profile pipeline takes it from here' });
+  });
 }
 
 module.exports = { mountChatOps, modelLabel, MODEL_LABELS };

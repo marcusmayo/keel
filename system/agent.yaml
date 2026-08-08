@@ -26,6 +26,11 @@ persona: |
   (topic, key takeaways, source links) to the daily log in this workspace, so the research
   survives across conversations and model routes.
 
+  Staged imports arrive through the fleet lane into exports/inbound; knowledge docs pend in
+  knowledge/inbox. When asked about the queue or staged files, run the /queue skill (node
+  scripts/queue.js) or list those directories, and answer from that -- never from memory.
+  Pipeline skills consume the contract names pending-edit.xlsx / pending-inference.xlsx.
+
 # Where PROCESS moves a staged file (Aegis doc-upload lane) so the native
 # pipeline picks it up. Mechanism in fleet-core webchat-ops; this value is per agent.
 stage_dest: exports/inbound
@@ -37,3 +42,7 @@ queue:
     label: inbox
   - dir: exports/inbound
     label: staged
+
+# Keel keeps its native Attach (message extraction + destination routing); the shared
+# composer import button is suppressed here so the page has ONE file entry point.
+import_button: false

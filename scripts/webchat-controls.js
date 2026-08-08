@@ -69,7 +69,7 @@
   function init(opts){
     if(opts&&typeof opts.notify==='function')notify=opts.notify;
     fetch('/model').then(r=>r.json()).then(d=>{
-      if(d&&d.ok){MODELS=d.options||[];MODEL_ACTIVE=d.active||null;WEB_ON=!!d.webActive;}
+      if(d&&d.ok){MODELS=d.options||[];MODEL_ACTIVE=d.active||null;WEB_ON=!!d.webActive;if(d.importBtn===false){window.__noImportBtn=1;var eb=document.getElementById('importBtn');if(eb)eb.remove();}}
       renderWeb();renderModelSel();
     }).catch(()=>{renderWeb();const bar=document.getElementById('modelbar');if(bar)bar.textContent='model: (unavailable)';});
     ensureProtBadge();renderProt();syncProt();ensurePersonaBtn();ensureImportBtn();
@@ -130,10 +130,9 @@
         rd.onload=async function(){
           var b64=String(rd.result).split(',')[1]||'';
           try{
-            var r=await(await fetch('/files/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name,dataBase64:b64})})).json();
-            if(!(r&&r.ok)) throw new Error((r&&r.error)||'stage failed');
-            var rr=await(await fetch('/files/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:r.name})})).json();
-            if(!(rr&&rr.ok)) throw new Error((rr&&rr.error)||'process failed');
+            var jp=async function(resp,step){var tx=await resp.text();var j=null;try{j=JSON.parse(tx);}catch(_e){throw new Error(step+' HTTP '+resp.status+': '+tx.slice(0,90));}if(!(j&&j.ok))throw new Error((j&&j.error)||(step+' failed'));return j;};
+            var r=await jp(await fetch('/files/stage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name,dataBase64:b64})}),'stage');
+            var rr=await jp(await fetch('/files/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:r.name})}),'process');
             notify('imported: '+rr.message,'sys');
           }catch(e){notify('import failed: '+(e&&e.message||e),'err');}
           done();
@@ -145,7 +144,7 @@
     }
     inp.click();
   }
-  function ensureImportBtn(){if(document.getElementById('importBtn'))return;var s=document.getElementById('send')||document.querySelector('button.send');if(!s||!s.parentNode)return;var b=document.createElement('button');b.id='importBtn';b.textContent='import';b.title='Import a file into this agent\u2019s pipeline (stage+process in one step; lands in the profile\u2019s intake dir)';b.style.cssText='background:#262626;color:#bbb;border:0;border-radius:8px;padding:0 16px;font-size:13px;cursor:pointer;margin-right:8px';b.onclick=importPick;s.parentNode.insertBefore(b,s);}
+  function ensureImportBtn(){if(window.__noImportBtn)return;if(document.getElementById('importBtn'))return;var s=document.getElementById('send')||document.querySelector('button.send');if(!s||!s.parentNode)return;var b=document.createElement('button');b.id='importBtn';b.textContent='import';b.title='Import a file into this agent\u2019s pipeline (stage+process in one step; lands in the profile\u2019s intake dir)';b.style.cssText='background:#262626;color:#bbb;border:0;border-radius:8px;padding:0 16px;font-size:13px;cursor:pointer;margin-right:8px';b.onclick=importPick;s.parentNode.insertBefore(b,s);}
 
   window.toggleWeb = toggleWeb;
   window.newConversation = newConversation;

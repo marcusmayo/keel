@@ -37,3 +37,16 @@ function listQueue(cwd) {
 }
 
 module.exports = { listQueue, readSpec };
+
+// CLI mode (the /queue skill): print the queue deterministically so the agent's
+// conversational layer and the panel read from the same source of truth.
+if (require.main === module) {
+  const cwd = process.env.AGENT_ROOT || process.env.KEEL_DIR || process.cwd();
+  const items = listQueue(cwd);
+  if (!items.length) { console.log('(queue empty)'); }
+  else {
+    for (const i of items) console.log(i.label + '/' + i.name);
+    console.log(items.length + ' item(s) queued');
+  }
+}
+

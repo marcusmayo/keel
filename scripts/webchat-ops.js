@@ -66,7 +66,7 @@ function mountChatOps(app, opts) {
       }
       const active = modelRouting.getSelected() || routineSlug;
       const webActive = chatSession.readWebAccess(stateDir);
-      res.json({ ok: true, tiers: tiers, active: active, options: options, webActive: webActive });
+      res.json({ ok: true, tiers: tiers, active: active, options: options, webActive: webActive, importBtn: IMPORT_BTN });
     } catch (e) { res.json({ ok: false, error: e.message }); }
   });
 
@@ -144,16 +144,18 @@ function mountChatOps(app, opts) {
   // agent (system/agent.yaml stage_dest: keel exports/inbound, castor inbox/drop).
   // Zero-dep read of the one flat key we need; a broken/missing agent.yaml makes
   // PROCESS refuse (fail-closed) rather than silently misroute into a dir nothing watches.
-  let stageYamlErr = null, STAGE_DEST_REL = 'inbox';
+  let stageYamlErr = null, STAGE_DEST_REL = 'inbox', IMPORT_BTN = true;
   try {
     const rawY = fs2.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8');
     const mY = rawY.match(/^stage_dest:\s*([^\s#]+)/m);
     if (mY) STAGE_DEST_REL = mY[1];
+    const mIB = rawY.match(/^import_button:\s*(\S+)/m);
+    if (mIB) IMPORT_BTN = mIB[1] !== 'false';
   } catch (e) { stageYamlErr = 'cannot read system/agent.yaml: ' + e.message; }
   const STAGE_DIR = path.join(stateDir, 'staging');
   const STAGE_DEST = path.join(cwd, STAGE_DEST_REL);
   const safeFile = (n) => String(n || '').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
-  let bigJson = null; try { bigJson = require('express').json({ limit: '25mb' }); } catch { /* default body limit applies */ }
+  let bigJson = null; try { bigJson = require('express').json({ limit: '50mb' }); } catch { /* default body limit applies */ }
   app.get('/files/staged', requireAuth, (req, res) => {
     let files = [];
     try { files = fs2.readdirSync(STAGE_DIR).map((f) => ({ name: f, bytes: fs2.statSync(path.join(STAGE_DIR, f)).size })); } catch { /* none yet */ }
@@ -168,6 +170,11 @@ function mountChatOps(app, opts) {
     fs2.writeFileSync(path.join(STAGE_DIR, name), buf);
     audit({ event: 'file-stage', name, bytes: buf.length });
     res.json({ ok: true, name, bytes: buf.length, message: 'staged ' + name + ' (' + buf.length + ' bytes) — Process moves it to ' + STAGE_DEST_REL });
+  });
+  // Oversize uploads must fail as JSON, not Express's HTML error page (the client parses JSON).
+  app.use('/files', (err, req, res, next) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413)) return res.status(413).json({ ok: false, error: 'file too large for import (50mb limit)' });
+    return next(err);
   });
   app.post('/files/process', requireAuth, (req, res) => {
     if (stageYamlErr) return res.status(500).json({ ok: false, error: stageYamlErr + ' — refusing to move (stage_dest unknown)' });

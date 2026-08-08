@@ -3,6 +3,11 @@
 # handler: entries name functions that stay verbatim in webchat/server.js (bespoke
 # query mapping / confirm gates / pre-spawn seeding).
 skills:
+  - route: /queue
+    bin: node
+    args: [scripts/queue.js]
+    timeout: 15000
+    category: Capture
   - route: /run-apply-edits
     bin: python3
     args: [tools/apply_portfolio_edits.py, exports/inbound/pending-edit.xlsx, --commit]

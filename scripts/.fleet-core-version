@@ -1,10 +1,10 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 871c689
-synced_at: 2026-08-08T14:52:43Z
+fleet_core_commit: 766eb96
+synced_at: 2026-08-08T17:28:55Z
 manifest:
   3898303060f67ede9038e61226c19415174dedca2196bca0b08c15c4d9d8353a  audit-log.js
   f53f053ef876dace97661f7d76000e877b2aee36b130cc4b3bd902214a53ae5e  auth.js
-  097ce5fcb08114ebde15f5d5296f8166deedc10aec4d556a25c26565f6f2db03  backup-push.sh
+  0edfa5340f217239bef6c1b7beac1e9f7a62ad15a72200ab2201e6e2fa2d8f93  backup-push.sh
   a0815b78356875d9936a7dd3185a96e8ba59f5e2bacc54db995d8504e603b93b  capabilities-shared.yaml
   acf2aa742a58c5a98549ec6e0ac76ee3d376e27126b76e462a79287e2453a099  capability.js
   ecce2b9f6fd7adf798a144ed6313e73bf484d2ecfc851f6208d7f59a279c5c73  chat-session.js

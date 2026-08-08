@@ -5,7 +5,7 @@
 # No-ops cleanly when BACKUP_ACCOUNT is empty (fleet not backup-initialized at build).
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -n bash "$0" "$@"    # volume paths need root; timer runs root already
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"          # scripts/core -> agent root (keel: /, castor: scaffold/)
+HERE="$(cd "$(dirname "$0")/.." && pwd)"             # vendored FLAT into scripts/ -> one level up is the agent root (keel: repo root, castor: scaffold/)
 FLAGS="$HERE/.provision-flags"
 flag() { grep -E "^$1=" "$FLAGS" 2>/dev/null | head -1 | cut -d= -f2-; }
 ACC="$(flag BACKUP_ACCOUNT || true)"; AGENT="$(flag AGENT_NAME || true)"

@@ -97,13 +97,23 @@ function gatewayConfig() {
     seen.add(t.model_name);
     model_list.push({
       model_name: t.model_name,
-      litellm_params: { model: t.openrouter_slug, api_key: 'os.environ/OPENROUTER_API_KEY' },
+      litellm_params: {
+        model: t.openrouter_slug,
+        api_key: 'os.environ/OPENROUTER_API_KEY',
+        // Structural data-retention denial, per request: OpenRouter excludes any
+        // upstream provider that stores or trains on prompts. A provider that
+        // would retain is not "asked nicely" -- it is not eligible to serve.
+        // Rides in the generator so a `model-routing.js set` can never drop it.
+        extra_body: { provider: { data_collection: 'deny' } },
+      },
     });
   }
   const cfg = { model_list, litellm_settings: { drop_params: true } };
   const banner = '# GENERATED from system/model-routing.yaml by scripts/model-routing.js.\n' +
                  '# Do not edit by hand -- change models via: model-routing.js set <tier> --slug ...\n' +
-                 '# Key = OPENROUTER_API_KEY in the service environment.\n';
+                 '# Key = OPENROUTER_API_KEY in the service environment.\n' +
+                 '# Every entry carries provider.data_collection=deny: requests are refused\n' +
+                 '# rather than served by an upstream that retains or trains on them.\n';
   return banner + yaml.dump(cfg, { lineWidth: 100, noRefs: true });
 }
 

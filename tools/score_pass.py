@@ -134,9 +134,18 @@ def extract_json(t):
         raise ValueError("no JSON array in claude output")
     return json.loads(t[i:j + 1])
 
+def _judge_model_args():
+    """The bare CLI resolves a default model the gateway may not carry (live 400:
+    claude-opus-4-8 not in catalog). Pass an explicit, catalog-valid model:
+    KEEL_JUDGE_MODEL wins; else the container-baked ANTHROPIC_SMALL_FAST_MODEL
+    (right tier for batched judgment); else legacy bare behavior."""
+    import os
+    m = os.environ.get("KEEL_JUDGE_MODEL") or os.environ.get("ANTHROPIC_SMALL_FAST_MODEL")
+    return ["--model", m] if m else []
+
 def judge(prompt, timeout):
     with tempfile.TemporaryDirectory() as td:
-        proc = subprocess.run(["claude", "-p", prompt], cwd=td,
+        proc = subprocess.run(["claude", "-p", prompt] + _judge_model_args(), cwd=td,
                               capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
         raise RuntimeError(f"claude -p exit {proc.returncode}: {proc.stderr[:300]}")

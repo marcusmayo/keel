@@ -80,6 +80,15 @@ def extract_json(t):
         raise ValueError("no JSON array found")
     return json.loads(t[i:j+1])
 
+def _judge_model_args():
+    """The bare CLI resolves a default model the gateway may not carry (live 400:
+    claude-opus-4-8 not in catalog). Pass an explicit, catalog-valid model:
+    KEEL_JUDGE_MODEL wins; else the container-baked ANTHROPIC_SMALL_FAST_MODEL
+    (right tier for batched judgment); else legacy bare behavior."""
+    import os
+    m = os.environ.get("KEEL_JUDGE_MODEL") or os.environ.get("ANTHROPIC_SMALL_FAST_MODEL")
+    return ["--model", m] if m else []
+
 def main():
     data = json.loads(require(RECON).read_text(encoding="utf-8"))
     amb = data["buckets"].get("ambiguous", [])
@@ -103,7 +112,7 @@ def main():
     prompt = build_prompt(pairs)
     print(f"judging {len(pairs)} ambiguous pairs via {MODEL_NOTE} (one call, may take ~30-60s)...", flush=True)
     with tempfile.TemporaryDirectory() as td:
-        proc = subprocess.run(["claude", "-p", prompt], cwd=td,
+        proc = subprocess.run(["claude", "-p", prompt] + _judge_model_args(), cwd=td,
                               capture_output=True, text=True, timeout=240)
     if proc.returncode != 0:
         print(f"claude -p exit {proc.returncode}\nstderr: {proc.stderr[:400]}\nstdout: {proc.stdout[:400]}"); sys.exit(1)

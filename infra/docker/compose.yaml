@@ -25,6 +25,7 @@ services:
       - keel-knowledge:/app/knowledge
       - keel-logs:/app/logs
       - keel-support:/app/support
+      - keel-exports:/app/exports   # export artifacts (score proposals, reconcile/multisource xlsx, inbound staging) -- was an unowned overlay dir: root-created, app-unwritable, lost on recreate
       - keel-claude:/home/keel/.claude   # Claude Code session store -> multi-turn memory (persist across recreate)
     restart: unless-stopped
   gateway:
@@ -50,4 +51,5 @@ volumes:
   keel-knowledge:
   keel-logs:
   keel-support:
+  keel-exports:
   keel-claude:

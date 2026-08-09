@@ -68,7 +68,7 @@ COPY run_e2e.sh clean_demo.sh /app/
 COPY tests/ /app/tests/
 
 # Runtime state mount points, writable by keel whether or not volumes mount.
-RUN mkdir -p /app/state /app/knowledge /app/logs /app/support /home/keel/.claude \
+RUN mkdir -p /app/state /app/knowledge /app/logs /app/support /app/exports/inbound /app/exports/archive /home/keel/.claude \
     && chown -R keel:keel /app /home/keel/.claude
 
 USER keel

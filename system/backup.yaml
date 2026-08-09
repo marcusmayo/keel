@@ -8,6 +8,7 @@ volumes:
   - keel_keel-knowledge
   - keel_keel-logs
   - keel_keel-support
+  - keel_keel-exports
   - keel_keel-claude
 containers:
   - keel-webchat

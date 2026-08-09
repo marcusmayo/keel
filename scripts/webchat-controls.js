@@ -146,7 +146,49 @@
   }
   function ensureImportBtn(){if(window.__noImportBtn)return;if(document.getElementById('importBtn'))return;var s=document.getElementById('send')||document.querySelector('button.send');if(!s||!s.parentNode)return;var b=document.createElement('button');b.id='importBtn';b.textContent='import';b.title='Import a file into this agent\u2019s pipeline (stage+process in one step; lands in the profile\u2019s intake dir)';b.style.cssText='background:#262626;color:#bbb;border:0;border-radius:8px;padding:0 16px;font-size:13px;cursor:pointer;margin-right:8px';b.onclick=importPick;s.parentNode.insertBefore(b,s);}
 
+  // ---------------------------------------------------------------------------
+  // runSkill(route[, opts]) -- shared client for the fleet-core ASYNC SKILL LANE.
+  //
+  // Spawn routes answer 202 {jobId} immediately and run the tool off the event
+  // loop (fleet-core skills.js). This helper hides that: it starts the job, polls
+  // GET /skill-status/<jobId>, and RESOLVES TO THE LEGACY {ok, output} SHAPE, so a
+  // caller that used to do fetch(route).then(r=>r.json()) keeps its handler body
+  // byte-identical. Precondition refusals still come back 200 with {ok:false,
+  // output:missingMsg} and are returned untouched -- no job was created.
+  //
+  // opts.onTick(seconds) fires each poll for liveness UI; opts.init passes fetch
+  // options. A lost job (agent restarted mid-run) resolves ok:false with an honest
+  // message -- never a fabricated success.
+  // ---------------------------------------------------------------------------
+  function runSkill(route, opts){
+    var o = opts || {}, t0 = Date.now(), DEADLINE = t0 + 20*60*1000;
+    return fetch(route, o.init || {}).then(function(r){
+      return r.json().then(function(j){ return { status: r.status, j: j }; },
+                           function(){ return { status: r.status, j: null }; });
+    }).then(function(first){
+      if (first.status !== 202 || !first.j || !first.j.jobId) {
+        return first.j || { ok:false, output:'non-JSON response (HTTP '+first.status+')' };
+      }
+      var jobId = first.j.jobId;
+      function poll(){
+        if (Date.now() > DEADLINE) return { ok:false, output:'timed out waiting for job '+jobId };
+        return new Promise(function(s){ setTimeout(s, 1200); }).then(function(){
+          return fetch('/skill-status/'+encodeURIComponent(jobId));
+        }).then(function(p){
+          if (p.status === 404) return { ok:false, output:'job '+jobId+' not found (agent restarted mid-run?)' };
+          return p.json().then(function(pj){
+            if (pj && pj.status === 'done') return pj;
+            if (typeof o.onTick === 'function') { try { o.onTick(Math.round((Date.now()-t0)/1000)); } catch(e){} }
+            return poll();
+          }, function(){ return poll(); });
+        }, function(){ return poll(); });
+      }
+      return poll();
+    });
+  }
+
   window.toggleWeb = toggleWeb;
   window.newConversation = newConversation;
+  window.runSkill = runSkill;
   window.ChatControls = { init: init };
 })();

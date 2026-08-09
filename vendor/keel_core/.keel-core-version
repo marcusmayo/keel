@@ -1,0 +1,14 @@
+# keel-core sync stamp -- do not edit by hand
+keel_core_version: 0.1.0
+keel_core_commit: bff65ae
+synced_at: 2026-08-09T16:37:49Z
+manifest:
+  8ca2f8bb12074d9f47cbe7bd9747b7fe664da62df06fe4393ebc0087422747d0  __init__.py
+  56cb5aa5275013754fcd860453ba5da704443c8ed794fcfbbd67b175255f1a5f  _text.py
+  8b189fcc6a083fe1eafc813fcb00bcab52b489931dbfb83c3615f82f7c6bcd9d  export.py
+  49390a26ba4dc07283c7ac1a141dbfe0f6ea854bc4c7b688b15d3c49f6c8cdbf  find.py
+  64b29210278a8505918af83cc490e804fde383fa1be6abaf05a98750679b2791  judge.py
+  242c45e795fa310d25c1711265d9ec29ef091cc3c6c85cd0f1daf3d5ec7875be  normalize.py
+  d5c4dc89a0937aa025f5740e7776988d0c9a7021aacd680d0356b450ef497729  reconcile.py
+  e870dc4f00543ac9b330da63ccc3ea849d63466a37051d9dd15ac33b2d6f9910  schema.py
+  a7bb2ddd4c3c868c05b89db862679d7b34ecb3118827d597933b1b60b543e06f  score.py

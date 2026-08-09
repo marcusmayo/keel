@@ -43,6 +43,9 @@ RUN cd /app/webchat && npm ci --omit=dev
 
 # Code whitelist (context filtering already blocked residue + service.env).
 COPY tools/ /app/tools/
+# keel-core: the vendored deterministic engine, drift-guaranteed like fleet-core
+COPY vendor/ /app/vendor/
+RUN bash /app/vendor/verify-keel-core.sh /app/vendor/keel_core
 COPY gate/ /app/gate/
 
 # Fleet-core drift gate (gate/): vendored gate modules must byte-match agent-fleet-iac/core/gate.

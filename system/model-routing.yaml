@@ -29,6 +29,15 @@ tiers:
     openrouter_slug: openrouter/moonshotai/kimi-k3
     use_for: [multi-step reasoning, build sessions]
 
+  gpt_luna:
+    model_name: gpt-5.6-luna
+    openrouter_slug: openrouter/openai/gpt-5.6-luna
+    use_for: [cheap fast triage, high-volume classification, 1M-context scans]
+  gpt_terra:
+    model_name: gpt-5.6-terra
+    openrouter_slug: openrouter/openai/gpt-5.6-terra
+    use_for: [mid-weight reasoning, long-document work, routine alternative]
+
   claude_haiku:
     model_name: claude-haiku-4.5
     openrouter_slug: openrouter/anthropic/claude-haiku-4.5

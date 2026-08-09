@@ -15,6 +15,7 @@ services:
       CLAUDE_CONFIG_DIR: /home/keel/.claude   # relocate .claude.json INTO the persistent volume (kills the recreate-warning)
       ANTHROPIC_BASE_URL: http://gateway:4000   # text via LiteLLM->OpenRouter (vision stays direct)
       ANTHROPIC_SMALL_FAST_MODEL: claude-haiku-4.5   # gateway alias name; unpinned, the CLI sends its dated default and 404s the WebSearch aux-model call
+      ANTHROPIC_MODEL: deepseek-v4-pro   # routine-tier default (system/model-routing.yaml); pins the CLI's MAIN model the way SMALL_FAST pins the aux -- bare `claude -p` from tools otherwise sends a dated default the gateway 400s
       WEB_DIRECT_MODEL: claude-sonnet-4-6   # web-ON turns bypass the gateway -> api.anthropic.com for REAL server-side web_search (uses the real ANTHROPIC_API_KEY)
       WEB_DIRECT_MODELS: "claude-sonnet-4.6=claude-sonnet-4-6,claude-sonnet-4.5=claude-sonnet-4-6,claude-haiku-4.5=claude-haiku-4-5-20251001,claude-opus-4.8=claude-opus-4-8"   # picker->direct map: web-ON runs the SELECTED model's direct equivalent (all three proven on this key)
     ports:

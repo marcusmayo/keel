@@ -112,7 +112,9 @@ def main():
             if _ref:
                 _ref2pid[_ref] = str(_r.get("parent", "") or "")
         _resolver = _Resolver()
-    except Exception:
+    except (Exception, SystemExit):
+        # resolve_parent raises SystemExit (BaseException) when the raw jira CSV is
+        # absent; the backlog-only lane must degrade to no-parent-enrichment, not die.
         _ref2pid, _resolver = {}, None
 
     # collect what lands: gap (active) + done_gap (done-reference)
@@ -120,7 +122,7 @@ def main():
     if ONLY in ("all", "gap"):
         for row in buckets.get("gap", []):
             typ = row.get("type", "")
-            src_status = "not-started"
+            src_status = (row.get("src_status") or "not-started").strip().lower()
             status = SRC_STATUS_MAP.get(src_status, "backlog")
             to_land.append(("gap", typ, row, status, src_status))
     if ONLY in ("all", "done_gap"):

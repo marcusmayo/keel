@@ -87,11 +87,23 @@ function pruneJobs(dir) {
   } catch (e) { /* retention is best-effort; never fail a run over it */ }
 }
 
+// The durable record carries NO tool stdout -- structurally, not by policy.
+// A scanner's output quotes the very PII it found, so persisting stdout would make
+// state/skill-jobs/ a surface that reports itself on the next secrets scan (the
+// evidence-eats-output loop state/compliance/ was excluded for). Rather than add a
+// second exclusion someone must remember to extend, the surface simply cannot hold
+// tool output: metadata plus a SHA-256 of the stdout, which proves what was returned
+// without storing it. Live output stays in the in-memory registry for polling.
 function persistJob(cwd, job) {
   try {
     const dir = jobsDir(cwd);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, job.jobId + '.json'), JSON.stringify(job, null, 2));
+    const meta = {};
+    for (const k of Object.keys(job)) { if (k !== 'output') meta[k] = job[k]; }
+    meta.outputBytes = Buffer.byteLength(job.output || '', 'utf8');
+    meta.outputSha256 = crypto.createHash('sha256').update(String(job.output || ''), 'utf8').digest('hex');
+    meta.outputPersisted = false;
+    fs.writeFileSync(path.join(dir, job.jobId + '.json'), JSON.stringify(meta, null, 2));
     pruneJobs(dir);
   } catch (e) { job.persistError = String(e); }
 }
@@ -178,7 +190,10 @@ function getJob(cwd, jobId) {
   const live = JOBS.get(jobId);
   if (live) return live;
   try {
-    return JSON.parse(fs.readFileSync(path.join(jobsDir(cwd), jobId + '.json'), 'utf8'));
+    const rec = JSON.parse(fs.readFileSync(path.join(jobsDir(cwd), jobId + '.json'), 'utf8'));
+    // Disk records hold no stdout by design -- say so rather than imply empty output.
+    if (rec && rec.output === undefined) { rec.output = ''; rec.outputEvicted = true; }
+    return rec;
   } catch (e) { return null; }
 }
 
@@ -251,6 +266,8 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
       output: job.output, exitCode: job.exitCode, timedOut: job.timedOut,
       startedAt: job.startedAt, endedAt: job.endedAt, durationMs: job.durationMs,
       outputTruncated: !!job.outputTruncated,
+      outputEvicted: !!job.outputEvicted,
+      outputSha256: job.outputSha256 || null,
     });
   });
 

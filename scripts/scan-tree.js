@@ -19,7 +19,8 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', 'archive']);
 const SKIP_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.pdf', '.xlsx', '.xls',
                           '.zip', '.gz', '.woff', '.woff2', '.ico', '.age', '.msg']);
 // Files that legitimately contain example patterns.
-const SKIP_FILE = new Set(['never-egress.example.json', 'scan-tree.js', 'redaction-gate.js', 'ado_sample.csv']);
+const SKIP_FILE = new Set(['never-egress.example.json', 'scan-tree.js', 'redaction-gate.js', 'ado_sample.csv',
+                           'compliance-checks.js']);   // carries the seeded PII canary the tripwire self-test fires against
 
 function walk(dir, out) {
   let entries;

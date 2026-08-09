@@ -206,7 +206,7 @@
     if (text === '/merge-accept') {
       input.value=''; addMsg('/merge-accept','me');
       addMsg('Confirming merge proposals\u2026','sys');
-      fetch('/run-merge?action=accept').then(r=>r.json()).then(d=>{
+      runSkill('/run-merge?action=accept').then(d=>{
         addMsg(d.output||'(no output)', d.ok?'sys':'err');
       }).catch(e=>addMsg('merge-accept failed: '+e,'err'));
       return;
@@ -214,7 +214,7 @@
     if (text.startsWith('/merge-reject ')) {
       const keys=text.slice(14).trim();
       input.value=''; addMsg(text,'me');
-      fetch('/run-merge?action=reject&keys='+encodeURIComponent(keys)).then(r=>r.json()).then(d=>{
+      runSkill('/run-merge?action=reject&keys='+encodeURIComponent(keys)).then(d=>{
         addMsg(d.output||'(no output)', d.ok?'sys':'err');
       }).catch(e=>addMsg('merge-reject failed: '+e,'err'));
       return;
@@ -222,7 +222,7 @@
     if (text.startsWith('/merge-distinct ')) {
       const keys=text.slice(16).trim();
       input.value=''; addMsg(text,'me');
-      fetch('/run-merge?action=distinct&keys='+encodeURIComponent(keys)).then(r=>r.json()).then(d=>{
+      runSkill('/run-merge?action=distinct&keys='+encodeURIComponent(keys)).then(d=>{
         addMsg(d.output||'(no output)', d.ok?'sys':'err');
       }).catch(e=>addMsg('merge-distinct failed: '+e,'err'));
       return;
@@ -230,7 +230,7 @@
     if (text === '/run-e2e') {
         input.value = '';
         addMsg('/run-e2e', 'me');
-        fetch('/run-e2e').then(r => r.json()).then(d => {
+        runSkill('/run-e2e').then(d => {
           addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
         }).catch(e => addMsg('run-e2e failed: ' + e, 'err'));
         return;
@@ -239,7 +239,7 @@
         input.value = '';
         addMsg('/run-e2e confirm', 'me');
         addMsg('Running FULL E2E demo on synthetic data\u2026 (step 9 waits on the LLM: ~30-60s cloud / seconds GPU / minutes CPU -- do not resend)', 'sys');
-        fetch('/run-e2e?confirm=1').then(r => r.json()).then(d => {
+        runSkill('/run-e2e?confirm=1').then(d => {
           addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
         }).catch(e => addMsg('run-e2e failed: ' + e, 'err'));
         return;
@@ -248,7 +248,7 @@
       input.value = '';
       addMsg('/reconcile-semantic', 'me');
       addMsg('LLM judging ambiguous pairs\u2026 (slow, ~30-60s, no writes to portfolio)', 'sys');
-      fetch('/run-reconcile-semantic').then(r => r.json()).then(d => {
+      runSkill('/run-reconcile-semantic').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('reconcile-semantic failed: ' + e, 'err'));
       return;
@@ -259,7 +259,7 @@
       addMsg(text, 'me');
       if (!q) { addMsg('usage: /find <feature or idea text>', 'sys'); return; }
       addMsg('Searching for ' + q + '\u2026', 'sys');
-      fetch('/run-find?q=' + encodeURIComponent(q)).then(r => r.json()).then(d => {
+      runSkill('/run-find?q=' + encodeURIComponent(q)).then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('find failed: ' + e, 'err'));
       return;
@@ -268,7 +268,7 @@
       input.value = '';
       addMsg('/apply', 'me');
       addMsg('Apply dry-run (no writes)\u2026', 'sys');
-      fetch('/run-apply').then(r => r.json()).then(d => {
+      runSkill('/run-apply').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('apply failed: ' + e, 'err'));
       return;
@@ -277,7 +277,7 @@
       input.value = '';
       addMsg('/apply-edits', 'me');
       addMsg('Writing portfolio edits to YAML\u2026', 'sys');
-      fetch('/run-apply-edits').then(r => r.json()).then(d => {
+      runSkill('/run-apply-edits').then(d => {
         addMsg(d.ok ? d.output : ('Error: ' + (d.output || 'apply-edits failed')), 'sys');
       });
       return;
@@ -286,7 +286,7 @@
       input.value = '';
       addMsg('/apply-inference', 'me');
       addMsg('Applying inference decisions to YAML\u2026', 'sys');
-      fetch('/run-apply-inference').then(r => r.json()).then(d => {
+      runSkill('/run-apply-inference').then(d => {
         addMsg(d.ok ? d.output : ('Error: ' + (d.output || 'apply-inference failed')), 'sys');
       });
       return;
@@ -295,7 +295,7 @@
       input.value = '';
       addMsg('/apply-commit', 'me');
       addMsg('Apply COMMIT \u2014 writing items to state/\u2026', 'sys');
-      fetch('/run-apply?commit=1').then(r => r.json()).then(d => {
+      runSkill('/run-apply?commit=1').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('apply-commit failed: ' + e, 'err'));
       return;
@@ -304,7 +304,7 @@
       input.value = '';
       addMsg('/normalize-jira', 'me');
       addMsg('Normalizing Jira export\u2026', 'sys');
-      fetch('/run-normalize-jira').then(r => r.json()).then(d => {
+      runSkill('/run-normalize-jira').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('normalize-jira failed: ' + e, 'err'));
       return;
@@ -313,7 +313,7 @@
       input.value = '';
       addMsg('/normalize-ado', 'me');
       addMsg('Normalizing Azure DevOps export\u2026', 'sys');
-      fetch('/run-normalize-ado').then(r => r.json()).then(d => {
+      runSkill('/run-normalize-ado').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('normalize-ado failed: ' + e, 'err'));
       return;
@@ -322,7 +322,7 @@
       input.value = '';
       addMsg('/reconcile-run', 'me');
       addMsg('Running reconcile\u2026', 'sys');
-      fetch('/run-reconcile').then(r => r.json()).then(d => {
+      runSkill('/run-reconcile').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('reconcile failed: ' + e, 'err'));
       return;
@@ -331,7 +331,7 @@
       input.value = '';
       addMsg('/audit-verify', 'me');
       addMsg('Verifying audit chain\\u2026', 'sys');
-      fetch('/run-audit-verify').then(r => r.json()).then(d => {
+      runSkill('/run-audit-verify').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('audit-verify failed: ' + e, 'err'));
       return;
@@ -340,7 +340,7 @@
       input.value = '';
       addMsg('/scan', 'me');
       addMsg('Scanning repo for PII/secrets\\u2026', 'sys');
-      fetch('/run-scan-tree').then(r => r.json()).then(d => {
+      runSkill('/run-scan-tree').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('scan failed: ' + e, 'err'));
       return;
@@ -349,7 +349,7 @@
       input.value = '';
       addMsg('/score-all', 'me');
       addMsg('Scoring batch (up to 30 items)\u2026', 'sys');
-      fetch('/run-score-all').then(r => r.json()).then(d => {
+      runSkill('/run-score-all').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('score-all failed: ' + e, 'err'));
       return;
@@ -358,7 +358,7 @@
       input.value = '';
       addMsg('/normalize', 'me');
       addMsg('Running backlog normalizer\u2026', 'sys');
-      fetch('/run-normalize').then(r => r.json()).then(d => {
+      runSkill('/run-normalize').then(d => {
         addMsg(d.output || '(no output)', d.ok ? 'sys' : 'err');
       }).catch(e => addMsg('normalize failed: ' + e, 'err'));
       return;

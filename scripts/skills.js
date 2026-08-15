@@ -64,14 +64,53 @@ function jobsDir(cwd) { return path.join(cwd, 'state', 'skill-jobs'); }
 // Actor for the audit trail. Cloudflare Access stamps the authenticated identity
 // on every edge-authenticated request; service-token callers (Aegis) present the
 // client-id instead. Never throws, never blocks -- unknown is a valid actor.
+// Cloudflare Access terminates auth at the edge and forwards a signed assertion; the
+// origin is reachable only through the tunnel, so the assertion is taken at face value
+// (same trust model as fleet-core auth.js). A HUMAN login yields email; a SERVICE TOKEN
+// yields common_name -- which is why the control plane shows up as its token name and
+// never as the operator.
+function jwtClaim(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3) return null;
+    const pad = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(Buffer.from(pad, 'base64').toString('utf8'));
+    return claims.email || claims.common_name || null;
+  } catch (e) { return null; }
+}
+
+// WHO called: verified by the edge. Never invented -- an unattributable request is
+// recorded as unattributed rather than being given a plausible-looking identity.
 function actorOf(req) {
   try {
     const h = (req && req.headers) || {};
-    return String(h['cf-access-authenticated-user-email']
-      || h['cf-access-client-id']
-      || h['x-actor']
-      || 'unknown').slice(0, 200);
-  } catch (e) { return 'unknown'; }
+    const cap = (v) => String(v).slice(0, 200);
+    const claim = jwtClaim(h['cf-access-jwt-assertion']);
+    if (claim) return { src: 'cf-access', id: cap(claim) };
+    if (h['cf-access-authenticated-user-email']) return { src: 'cf-access', id: cap(h['cf-access-authenticated-user-email']) };
+    if (h['cf-access-client-id']) return { src: 'cf-access', id: cap(h['cf-access-client-id']) };
+    return { src: 'unknown', id: 'unattributed' };
+  } catch (e) { return { src: 'unknown', id: 'unattributed' }; }
+}
+
+// WHO it was FOR: asserted by the caller, NOT verifiable here. Kept in its own field so
+// the record never implies the agent checked something it cannot check. Two guards make
+// the assertion meaningful rather than free-form: it is honored only when the caller
+// itself authenticated (so an unattributed request cannot claim to act for anyone), and
+// assertedBy is taken from the VERIFIED actor rather than from the header -- so every
+// claim is permanently tied to the identity that made it.
+function onBehalfOf(req, actor) {
+  try {
+    if (!actor || actor.src === 'unknown') return null;
+    const raw = String(((req && req.headers) || {})['x-aegis-on-behalf-of'] || '').trim();
+    if (!raw) return null;
+    const i = raw.indexOf(':');
+    if (i < 1 || i === raw.length - 1) return null;
+    const src = raw.slice(0, i).replace(/[^a-z-]/gi, '').slice(0, 40);
+    const id = raw.slice(i + 1).replace(/[^\x20-\x7e]/g, '').slice(0, 200);
+    if (!src || !id) return null;
+    return { src, id, assertedBy: actor.id };
+  } catch (e) { return null; }
 }
 
 function pruneJobs(dir) {
@@ -135,12 +174,13 @@ function runSkillSpawn({ bin, args, timeout, cwd, record }) {
 
 // NON-BLOCKING spawn. Returns the job record synchronously (status 'running');
 // the child runs on its own and the job is completed + persisted on exit.
-function startSkillJob({ bin, args, timeout, cwd, record, route, actor }) {
+function startSkillJob({ bin, args, timeout, cwd, record, route, actor, onBehalf }) {
   const jobId = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex');
   const job = {
     jobId,
     route: route || null,
-    actor: actor || 'unknown',
+    actor: actor || { src: 'unknown', id: 'unattributed' },
+    onBehalfOf: onBehalf || null,
     bin,
     args: (args || []).map(String),
     status: 'running',
@@ -214,7 +254,8 @@ function listJobs(cwd, limit) {
     .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
     .slice(0, n)
     .map(j => ({
-      jobId: j.jobId, route: j.route, actor: j.actor, status: j.status, ok: j.ok,
+      jobId: j.jobId, route: j.route, actor: j.actor, onBehalfOf: j.onBehalfOf || null,
+      status: j.status, ok: j.ok,
       exitCode: j.exitCode, timedOut: j.timedOut, startedAt: j.startedAt,
       endedAt: j.endedAt, durationMs: j.durationMs,
     }));
@@ -246,9 +287,10 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
       if (s.requireFile && !fs.existsSync(path.join(cwd, s.requireFile))) {
         return res.json({ ok: false, output: s.missingMsg || ('missing required file: ' + s.requireFile) });
       }
+      const who = actorOf(req);
       const job = startSkillJob({
         bin: s.bin, args: s.args, timeout: s.timeout, cwd, record: s.record,
-        route: s.route, actor: actorOf(req),
+        route: s.route, actor: who, onBehalf: onBehalfOf(req, who),
       });
       return res.status(202).json({
         ok: true, status: 'running', jobId: job.jobId, route: s.route, startedAt: job.startedAt,

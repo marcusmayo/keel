@@ -162,8 +162,35 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
   }
   const route = (webEnabled && directModel) ? 'direct' : 'gateway';
 
+  // RUNTIME FACT, restated every turn.
+  //
+  // --model tells the CLI what to call; it tells the AGENT nothing. Asked "what model are
+  // you running?", the agent had no authoritative source and answered from its own
+  // training-time self-belief or -- worse, with --resume -- from a model named earlier in
+  // a conversation that may have run for weeks under a different selection. Both are
+  // confident and unfalsifiable, which is the failure mode worth eliminating: a wrong
+  // answer that looks exactly like a right one.
+  //
+  // The line below is rebuilt on EVERY turn from the value actually being spawned, so it
+  // cannot go stale, and it explicitly overrides earlier conversation so a resumed session
+  // cannot keep asserting a superseded model. It reports runModel rather than the requested
+  // model, which matters on web-enabled turns: those really do execute on the direct
+  // Anthropic model, and saying otherwise would be the same lie in the other direction.
+  // Volunteering stays governed by the persona -- this supplies the fact, not the manners.
+  const modelFact =
+    'RUNTIME FACT (authoritative for this turn, refreshed every turn): the active underlying model ' +
+    'is "' + String(runModel || '(cli default)') + '", reached via ' +
+    (route === 'direct' ? 'a direct Anthropic connection' : 'the local LiteLLM gateway to OpenRouter') +
+    '. This supersedes any model named earlier in this conversation -- earlier turns may have run on a ' +
+    'different model, and any such statement is now out of date. Never infer the active model from your ' +
+    'own self-knowledge or from conversation history; use only this line. State it only if the operator ' +
+    'explicitly asks which model is running.';
+  const turnPersona = (persona && persona.trim())
+    ? (persona.trim() + '\n\n' + modelFact)
+    : modelFact;
+
   const start = (sessionId, canRetry) => {
-    const args = buildArgs({ prompt, model: runModel, sessionId, persona, webEnabled });
+    const args = buildArgs({ prompt, model: runModel, sessionId, persona: turnPersona, webEnabled });
     const child = spawn('claude', args, { cwd, env: runEnv });
 
     let stderr = '', apiErr = '', sawText = false, textBuf = '';

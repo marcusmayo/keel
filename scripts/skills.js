@@ -79,16 +79,48 @@ function jwtClaim(token) {
   } catch (e) { return null; }
 }
 
+// Friendly names for verified identities, from system/agent.yaml `actor_labels`
+// (MECHANISM here, VALUES per agent). Cloudflare forwards a service token as an opaque
+// client-id, so a ledger of raw UUIDs is verified but unreadable.
+//
+// The label NEVER replaces the id. The client-id is what Cloudflare actually verified;
+// the label is a local naming convention this repo controls and can be edited freely.
+// Keeping them in separate fields means renaming a label cannot rewrite who acted, and
+// history stays groupable by the stable identifier -- the same rule that keeps actor
+// and onBehalfOf apart. Fails OPEN to no labels: a broken agent.yaml must never stop a
+// skill from running, it just costs readability.
+let LABELS = { at: 0, map: {} };
+function actorLabels(cwd) {
+  try {
+    const f = path.join(cwd, 'system', 'agent.yaml');
+    const mt = fs.statSync(f).mtimeMs;
+    if (mt !== LABELS.at) {
+      const doc = require('js-yaml').load(fs.readFileSync(f, 'utf8')) || {};
+      const raw = doc.actor_labels || {};
+      const map = {};
+      for (const k of Object.keys(raw)) map[String(k)] = String(raw[k]).slice(0, 120);
+      LABELS = { at: mt, map };
+    }
+  } catch (e) { LABELS = { at: LABELS.at, map: LABELS.map || {} }; }
+  return LABELS.map;
+}
+
 // WHO called: verified by the edge. Never invented -- an unattributable request is
 // recorded as unattributed rather than being given a plausible-looking identity.
-function actorOf(req) {
+function actorOf(req, cwd) {
   try {
     const h = (req && req.headers) || {};
     const cap = (v) => String(v).slice(0, 200);
+    const tag = (src, id) => {
+      const out = { src, id: cap(id) };
+      const label = cwd ? actorLabels(cwd)[out.id] : null;
+      if (label) out.label = label;
+      return out;
+    };
     const claim = jwtClaim(h['cf-access-jwt-assertion']);
-    if (claim) return { src: 'cf-access', id: cap(claim) };
-    if (h['cf-access-authenticated-user-email']) return { src: 'cf-access', id: cap(h['cf-access-authenticated-user-email']) };
-    if (h['cf-access-client-id']) return { src: 'cf-access', id: cap(h['cf-access-client-id']) };
+    if (claim) return tag('cf-access', claim);
+    if (h['cf-access-authenticated-user-email']) return tag('cf-access', h['cf-access-authenticated-user-email']);
+    if (h['cf-access-client-id']) return tag('cf-access', h['cf-access-client-id']);
     return { src: 'unknown', id: 'unattributed' };
   } catch (e) { return { src: 'unknown', id: 'unattributed' }; }
 }
@@ -287,7 +319,7 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
       if (s.requireFile && !fs.existsSync(path.join(cwd, s.requireFile))) {
         return res.json({ ok: false, output: s.missingMsg || ('missing required file: ' + s.requireFile) });
       }
-      const who = actorOf(req);
+      const who = actorOf(req, cwd);
       const job = startSkillJob({
         bin: s.bin, args: s.args, timeout: s.timeout, cwd, record: s.record,
         route: s.route, actor: who, onBehalf: onBehalfOf(req, who),

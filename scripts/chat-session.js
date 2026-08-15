@@ -28,27 +28,55 @@ const { spawn } = require('node:child_process');
 // transcripts are mutually incompatible (the strict direct validator 400s gateway-era turns),
 // so each route keeps its OWN rolling session. Switching web on/off never resumes a foreign
 // transcript -- no more cross-route 400 + forced reset; each route's context survives.
-function sessionFile(stateDir, route) {
-  return path.join(stateDir, route === 'direct' ? 'chat-session-direct.json' : 'chat-session.json');
+// Sessions are partitioned by route AND by model. Route partitioning already existed
+// for the obvious reason: resuming a gateway conversation on a direct-Anthropic turn
+// carries context from a different runtime. The active model is the same class of
+// boundary and was simply missing from the key.
+//
+// Why this is structural rather than a stronger instruction: with one rolling session,
+// switching models leaves the transcript full of confident assistant statements naming
+// the OLD model. The next turn's runtime fact is correct, but it competes with a more
+// recent, more specific answer -- and recency wins, so the agent reports the previous
+// selection until challenged. Telling it harder is a Shouldn't. Partitioning makes a
+// session incapable of containing a statement made under a different model, so the
+// stale answer cannot be produced at all.
+//
+// Nothing is destroyed: switching away and back returns to that model's own thread with
+// its memory intact. "New conversation" still clears every thread (clearSessionId with
+// no route), which is the operator-explicit reset.
+function modelKey(model) {
+  const k = String(model || 'default').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return k.slice(0, 60) || 'default';
+}
+function sessionFile(stateDir, route, model) {
+  const base = route === 'direct' ? 'chat-session-direct' : 'chat-session';
+  return path.join(stateDir, base + '--' + modelKey(model) + '.json');
 }
 
-function readSessionId(stateDir, route) {
-  try { return JSON.parse(fs.readFileSync(sessionFile(stateDir, route), 'utf8')).sessionId || null; }
+function readSessionId(stateDir, route, model) {
+  try { return JSON.parse(fs.readFileSync(sessionFile(stateDir, route, model), 'utf8')).sessionId || null; }
   catch { return null; }
 }
 
-function writeSessionId(stateDir, id, route) {
+function writeSessionId(stateDir, id, route, model) {
   try {
     fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(sessionFile(stateDir, route), JSON.stringify({ sessionId: id, updated: new Date().toISOString() }, null, 2));
+    fs.writeFileSync(sessionFile(stateDir, route, model),
+      JSON.stringify({ sessionId: id, model: String(model || ''), route: route || 'gateway', updated: new Date().toISOString() }, null, 2));
     return true;
   } catch { return false; }
 }
 
-function clearSessionId(stateDir, route) {
-  // route omitted (e.g. the /session/reset endpoint) -> clear BOTH routes: a "new conversation".
-  const routes = route ? [route] : ['gateway', 'direct'];
-  for (const r of routes) { try { fs.unlinkSync(sessionFile(stateDir, r)); } catch { /* absent */ } }
+// With no model (the /session/reset endpoint) this clears EVERY thread -- a real "new
+// conversation" across all routes and models, not just the one in play. Legacy
+// unpartitioned files are swept too so an upgrade cannot leave an orphan resumable.
+function clearSessionId(stateDir, route, model) {
+  if (model) { try { fs.unlinkSync(sessionFile(stateDir, route, model)); } catch { /* absent */ } return; }
+  try {
+    for (const f of fs.readdirSync(stateDir)) {
+      if (/^chat-session(-direct)?(--.*)?\.json$/.test(f)) { try { fs.unlinkSync(path.join(stateDir, f)); } catch { /* absent */ } }
+    }
+  } catch { /* no state dir */ }
 }
 
 // Read the agent's conversational identity. A runtime override in state/persona.txt (editable
@@ -199,7 +227,7 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
       let evt;
       try { evt = JSON.parse(line); } catch { return; }
       // Starting fresh (no stored id yet): capture and persist the new session id.
-      if (!sessionId) { const sid = eventSessionId(evt); if (sid) writeSessionId(stateDir, sid, route); }
+      if (!sessionId) { const sid = eventSessionId(evt); if (sid) writeSessionId(stateDir, sid, route, runModel); }
       if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
         for (const b of evt.message.content) {
           if (b && b.type === 'text' && b.text) { sawText = true; if (textBuf.length < 1200) textBuf += b.text; }
@@ -220,10 +248,10 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
       const errAll = apiErr + ' ' + stderr + ' ' + textBuf;
       const bareApiError = sawText && textBuf.trim().length < 600 && /^API Error:\s*4\d\d/i.test(textBuf.trim());
       // Stored id but the session itself is gone -> forget it so the next turn starts fresh.
-      if (sessionId && isMissingSessionError(errAll)) clearSessionId(stateDir, route);
+      if (sessionId && isMissingSessionError(errAll)) clearSessionId(stateDir, route, runModel);
       // Resumed transcript rejected by request validation -> drop it, retry ONCE fresh.
       if (canRetry && sessionId && (!sawText || bareApiError) && isSessionIncompatError(errAll)) {
-        clearSessionId(stateDir, route);
+        clearSessionId(stateDir, route, runModel);
         try { onEvent({ type: 'system', subtype: 'session_restart', note: 'stored conversation incompatible with this route; starting fresh' }); } catch { /* ignore */ }
         try { onEvent({ type: 'assistant', message: { content: [{ type: 'text', text: '\n[stored conversation was incompatible with this route -- restarting fresh]\n' }] } }); } catch { /* ignore */ }
         const retry = start(null, false);
@@ -236,7 +264,7 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
     return child;
   };
 
-  return start(readSessionId(stateDir, route), true);
+  return start(readSessionId(stateDir, route, runModel), true);
 }
 
 module.exports = {

@@ -49,3 +49,8 @@ queue:
 # Keel keeps its native Attach (message extraction + destination routing); the shared
 # composer import button is suppressed here so the page has ONE file entry point.
 import_button: false
+
+# Readable names for verified Cloudflare identities (fleet-core skills.js).
+# The raw client-id stays in the record as the verified fact; this is only a label.
+actor_labels:
+  "355050cdf01f7fa0640798fbed9a3c9d.access": aegis-control-plane

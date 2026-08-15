@@ -55,6 +55,22 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync, execFile } = require('child_process');
 
+// The agent already keeps an append-only, hash-chained audit log (gate/audit.js via
+// audit-log.js) -- but only the redaction gate ever wrote to it, so the DATA PLANE
+// (every skill run) was absent from the one surface designed to be tamper-evident.
+// A chain that records nothing verifies perfectly, which is the weakest possible
+// kind of green. Terminal skill results are now recorded there as metadata only,
+// matching the durable job record: no stdout, just its SHA-256.
+//
+// Logging is fail-OPEN: an unwritable log must not take the fleet down. The gap is
+// caught instead by the audit-verify control, which cross-checks job records against
+// chain entries -- so a silently broken audit lane surfaces as RED rather than as a
+// skill that refuses to run. (Fail-CLOSED -- refuse to act when the action cannot be
+// audited -- is the stricter alternative and a deliberate operator decision, not a
+// default to slip in.)
+let auditRecord = null;
+try { auditRecord = require('./audit-log.js').record; } catch (e) { auditRecord = null; }
+
 const JOB_CAP = 200;              // in-memory AND on-disk retention
 const OUT_CAP = 256 * 1024;       // persisted output ceiling per job
 const JOBS = new Map();           // jobId -> job (newest last)
@@ -241,6 +257,8 @@ function startSkillJob({ bin, args, timeout, cwd, record, route, actor, onBehalf
       let out = err ? ((stdout || '') + (stderr || '') + String(err)) : (stdout || '');
       if (out.length > OUT_CAP) { out = out.slice(0, OUT_CAP); job.outputTruncated = true; }
       job.output = out;
+      job.outputBytes = Buffer.byteLength(out, 'utf8');
+      job.outputSha256 = crypto.createHash('sha256').update(out, 'utf8').digest('hex');
 
       // Prior evidence contract, byte-identical shape: the compliance board is unchanged.
       if (record) {
@@ -252,6 +270,22 @@ function startSkillJob({ bin, args, timeout, cwd, record, route, actor, onBehalf
         } catch (e) { job.persistError = String(e); }
       }
       persistJob(cwd, job);
+
+      // Data-plane event -> the hash-chained log. Metadata only, same posture as the
+      // durable record: WHO (verified) and FOR WHOM (asserted), what ran, how it ended,
+      // and the digest of what came back -- never the output itself.
+      if (auditRecord) {
+        try {
+          auditRecord({
+            event: 'skill-run',
+            jobId: job.jobId, route: job.route,
+            actor: job.actor, onBehalfOf: job.onBehalfOf,
+            ok: job.ok, exitCode: job.exitCode, timedOut: job.timedOut,
+            durationMs: job.durationMs,
+            outputBytes: job.outputBytes, outputSha256: job.outputSha256,
+          });
+        } catch (e) { job.auditError = String(e).slice(0, 200); persistJob(cwd, job); }
+      }
     });
   return job;
 }
@@ -348,6 +382,28 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
   // Durable run history -- the data-plane event stream the audit lane consumes.
   app.get('/skill-jobs', requireAuth, (req, res) =>
     res.json({ ok: true, jobs: listJobs(cwd, req.query && req.query.limit) }));
+
+  // Chain status + tail, for the control plane's Audit view. Each agent reports on
+  // its OWN log only; nothing here lets one agent vouch for another's history, and
+  // the control plane cannot rewrite what an agent recorded.
+  app.get('/audit-verify', requireAuth, (req, res) => {
+    try {
+      const a = require('./audit-log.js');
+      return res.json({ ok: true, chain: a.verify(), log: a.LOG });
+    } catch (e) { return res.json({ ok: false, error: 'audit log unavailable: ' + String(e).slice(0, 160) }); }
+  });
+  app.get('/audit-recent', requireAuth, (req, res) => {
+    try {
+      const a = require('./audit-log.js');
+      const n = Math.min(Math.max(parseInt((req.query && req.query.limit) || '25', 10) || 25, 1), 200);
+      let rows = [];
+      try {
+        rows = fs.readFileSync(a.LOG, 'utf8').trim().split('\n').filter(Boolean).slice(-n)
+          .map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean).reverse();
+      } catch (e) { rows = []; }
+      return res.json({ ok: true, rows });
+    } catch (e) { return res.json({ ok: false, error: String(e).slice(0, 160) }); }
+  });
 
   // Panel-facing catalogue: the same declarative list, minus spawn internals.
   app.get('/skills', requireAuth, (req, res) => res.json({ ok: true, skills: list.map(x => ({

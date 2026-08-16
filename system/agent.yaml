@@ -53,4 +53,5 @@ import_button: false
 # Readable names for verified Cloudflare identities (fleet-core skills.js).
 # The raw client-id stays in the record as the verified fact; this is only a label.
 actor_labels:
-  "355050cdf01f7fa0640798fbed9a3c9d.access": aegis-control-plane
+  "355050cdf01f7fa0640798fbed9a3c9d.access": aegis-workstation
+  "67679969ddc90514a9db95c21c544bd4.access": aegis-vm

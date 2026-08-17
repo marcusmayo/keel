@@ -102,7 +102,10 @@ GATEWAY_CFG=infra/docker/litellm/openrouter.generated.yaml
 GEN_ERR="${GATEWAY_CFG}.err"
 if sudo docker compose -f infra/docker/compose.yaml run --rm --no-deps -T webchat \
      node scripts/model-routing.js gateway-config > "${GATEWAY_CFG}.tmp" 2>"$GEN_ERR" && [ -s "${GATEWAY_CFG}.tmp" ]; then
-  mv "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; rm -f "$GEN_ERR"; echo "gateway config generated -> $GATEWAY_CFG ($(grep -c 'model_name' "$GATEWAY_CFG") models)"
+  rm -f "$GEN_ERR"
+  # write only when the table changed, so the file's mtime means "the table changed"
+  if [ -s "$GATEWAY_CFG" ] && cmp -s "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; then rm -f "${GATEWAY_CFG}.tmp"; echo "gateway config unchanged ($(grep -c 'model_name' "$GATEWAY_CFG") models)"
+  else mv "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; echo "gateway config generated -> $GATEWAY_CFG ($(grep -c 'model_name' "$GATEWAY_CFG") models)"; fi
 else
   rm -f "${GATEWAY_CFG}.tmp"
   echo "WARNING: gateway-config generation FAILED:"; tail -n 4 "$GEN_ERR" 2>/dev/null | sed 's/^/    /'; rm -f "$GEN_ERR"
@@ -115,5 +118,17 @@ command -v tailscale >/dev/null 2>&1 && { ADDR="$(tailscale ip -4 2>/dev/null | 
 [ -n "$ADDR" ] || ADDR=127.0.0.1
 echo "publishing webchat on ${ADDR}:8443"
 sudo env KEEL_PUBLISH_ADDR="$ADDR" docker compose -f infra/docker/compose.yaml --profile gateway up -d
+# LiteLLM reads its config once, at start, and compose up -d does not restart a container for a
+# changed bind-mounted file: a gateway older than its config is serving a table that no longer
+# exists (seen live: a Terra turn 400'd on a gateway still holding the six-model baseline while the
+# eight-model file sat beside it). Restart it when it predates the file; nothing else is touched.
+if sudo docker ps --format '{{.Names}}' | grep -qx keel-gateway; then
+  gw_start="$(date -d "$(sudo docker inspect --format '{{.State.StartedAt}}' keel-gateway)" +%s 2>/dev/null || echo 0)"
+  cfg_mtime="$(stat -c %Y "$GATEWAY_CFG")"
+  if [ "$cfg_mtime" -gt "$gw_start" ]; then
+    echo "gateway started before its config was written -- restarting it"
+    sudo docker compose -f infra/docker/compose.yaml --profile gateway restart gateway
+  else echo "gateway is newer than its config -- no restart"; fi
+fi
 ./infra/scripts/smoke-test.sh keel-webchat "http://${ADDR}:8443"
 echo "bootstrap complete -- webchat: http://${ADDR}:8443"

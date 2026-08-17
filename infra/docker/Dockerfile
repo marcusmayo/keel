@@ -40,6 +40,11 @@ WORKDIR /app
 # webchat deps from lockfile only.
 COPY webchat/package.json webchat/package-lock.json /app/webchat/
 RUN cd /app/webchat && npm ci --omit=dev
+# scripts/ (fleet-core model-routing.js, capability.js, ...) resolve js-yaml and friends from the
+# webchat deps. Baked into the IMAGE so it holds for `docker run`, `docker exec` and compose alike:
+# it lived only in the compose environment, so bootstrap's `docker run ... gateway-config` could
+# not find js-yaml and silently fell back to the committed baseline config on every boot.
+ENV NODE_PATH=/app/webchat/node_modules
 
 # Code whitelist (context filtering already blocked residue + service.env).
 COPY tools/ /app/tools/

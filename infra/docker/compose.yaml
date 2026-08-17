@@ -36,7 +36,7 @@ services:
     image: ghcr.io/berriai/litellm@sha256:9ef6f45bc0104940571765e610c52a1d761b5ec85efcd193795281086ee61277
     container_name: keel-gateway
     env_file: [keel.env]
-    command: ["--config", "/cfg/${LITELLM_CONFIG:-openrouter.yaml}", "--port", "4000"]
+    command: ["--config", "/cfg/${LITELLM_CONFIG:-openrouter.generated.yaml}", "--port", "4000"]
     volumes:
       - ./litellm:/cfg:ro
     extra_hosts:

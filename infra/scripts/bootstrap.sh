@@ -7,7 +7,15 @@ cd "$(dirname "$0")/../.."
 AGENT_ROOT="$(pwd)"
 FLAGS="$AGENT_ROOT/.provision-flags"
 ENV=infra/docker/keel.env
-[ -f "$ENV" ] && { echo "ABORT: $ENV exists -- already bootstrapped (delete to redo)"; exit 1; }
+# Resume, never refuse. An existing env means an earlier run got this far; secrets are re-fetched
+# from the vault (a rotation lands on any re-run) and the file rewritten; only when the vault
+# cannot answer and there is no terminal does the existing env stand in for a missing secret.
+# The old rule ("exists -- already bootstrapped, delete to redo") made the self-heal retry mean
+# a different thing here than on the other profile; the retry timer had to delete the file to
+# get past it. Idempotent by construction now, on both profiles: fetch, write, generate, up.
+RESUME=0
+[ -f "$ENV" ] && { RESUME=1; echo "$ENV exists -- resuming (secrets re-fetched, nothing refused)"; }
+env_get(){ [ "$RESUME" = 1 ] && sed -n "s/^$1=//p" "$ENV" 2>/dev/null | head -n 1 || true; }
 sudo docker image inspect keel:latest >/dev/null 2>&1 || { echo "image missing -- building"; ./infra/scripts/build-image.sh; }
 # Runtime secrets: fetch from the per-agent Key Vault via the VM's managed identity
 # when the vault is provisioned + seeded (fire-and-forget, no prompts). Fall back to
@@ -55,8 +63,10 @@ elif [ -t 0 ]; then
   echo ""
   echo ">> SECRET NEEDED: 'anthropic-api-key' is not in the vault. Paste it now, or Ctrl-C and seed it:  fleetctl set-secrets <this-agent>"
   read -rs -p "ANTHROPIC_API_KEY: " APIKEY; echo
+elif APIKEY="$(env_get ANTHROPIC_API_KEY)" && [ -n "$APIKEY" ]; then
+  echo "ANTHROPIC_API_KEY: kept from the existing $ENV (vault unreachable, no terminal)"
 else
-  die "cannot obtain 'anthropic-api-key' -- no vault and no terminal to prompt."
+  die "cannot obtain 'anthropic-api-key' -- no vault, no terminal to prompt, no earlier env to resume from."
 fi
 # OPENROUTER_API_KEY -- same; validated below regardless of source.
 if ORKEY="$(vault_get_or_wait openrouter-api-key)"; then
@@ -65,6 +75,10 @@ elif [ -t 0 ]; then
   echo ""
   echo ">> SECRET NEEDED: 'openrouter-api-key' is not in the vault. Paste it now, or Ctrl-C and seed it:  fleetctl set-secrets <this-agent>"
   read -rs -p "OPENROUTER_API_KEY (must start with sk-or-): " ORKEY; echo
+elif ORKEY="$(env_get OPENROUTER_API_KEY)" && [ -n "$ORKEY" ]; then
+  echo "OPENROUTER_API_KEY: kept from the existing $ENV (vault unreachable, no terminal)"
+else
+  ORKEY=""
 fi
 case "$ORKEY" in
   sk-or-*) : ;;
@@ -74,15 +88,18 @@ esac
 umask 177
 printf 'ANTHROPIC_API_KEY=%s\nOPENROUTER_API_KEY=%s\nANTHROPIC_BASE_URL=http://gateway:4000\n' "$APIKEY" "$ORKEY" > "$ENV"
 umask 022
-# regenerate the LiteLLM gateway config from system/model-routing.yaml so the
-# bind-mounted ./litellm has the current 6-model table (fall back to committed).
-GATEWAY_CFG=infra/docker/litellm/openrouter.yaml
+# Generate the LiteLLM gateway config from system/model-routing.yaml into an UNTRACKED file the
+# gateway mounts (openrouter.generated.yaml, gitignored); the committed openrouter.yaml beside it
+# is the baseline copied in when generation fails. It used to be written over the tracked file,
+# which left the checkout dirty and made a pull that touched it conflict on the VM.
+GATEWAY_SRC=infra/docker/litellm/openrouter.yaml
+GATEWAY_CFG=infra/docker/litellm/openrouter.generated.yaml
 if sudo docker run --rm -w /app -e AGENT_ROOT=/app keel:latest \
      node scripts/model-routing.js gateway-config > "${GATEWAY_CFG}.tmp" 2>/dev/null && [ -s "${GATEWAY_CFG}.tmp" ]; then
-  mv "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; echo "gateway config regenerated -> $GATEWAY_CFG"
+  mv "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; echo "gateway config generated -> $GATEWAY_CFG"
 else
-  rm -f "${GATEWAY_CFG}.tmp"; [ -s "$GATEWAY_CFG" ] || { echo "ABORT: gateway-config regen failed and no committed openrouter.yaml"; exit 1; }
-  echo "WARNING: gateway-config regen failed -- using committed $GATEWAY_CFG"
+  rm -f "${GATEWAY_CFG}.tmp"; [ -s "$GATEWAY_SRC" ] || { echo "ABORT: gateway-config generation failed and no committed $GATEWAY_SRC to fall back to"; exit 1; }
+  cp "$GATEWAY_SRC" "$GATEWAY_CFG"; echo "WARNING: gateway-config generation failed -- using the committed baseline $GATEWAY_SRC -> $GATEWAY_CFG"
 fi
 # Publish address: tailnet IP when joined; loopback otherwise (reach via SSH tunnel).
 ADDR=127.0.0.1

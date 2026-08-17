@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 6f2b9cf
-synced_at: 2026-08-17T18:21:57Z
+fleet_core_commit: 8134158
+synced_at: 2026-08-17T20:34:48Z
 manifest:
   72ecd6fd0323f5503c9936d1f0ec861bbabf885be1969cacd88883e8fcd60f11  audit-log.js
   985dfefa0d9025758570c3b94b184d7a44b6674f719972919e5c4a7a03097d77  auth.js
@@ -11,7 +11,7 @@ manifest:
   52c7a72f839024b5bc9a7f9d385f0ef439f851fed070f2fdaadfb602a0cedad3  compliance-checks.js
   6d8da9a9fc29e8843f6574171fda14081721cdf0119e2821b8049c3240c179db  fetch-secret.sh
   6516adafc9293e98d5453b6a86e74d73011f2e223122fd257ba99b319e9fa9f1  health-check.js
-  80c88f87b619f97e9fb65706becbd7abcf81041b1ead13796f86b49c116348b0  model-routing.js
+  e4d5759abc7dce72d5e26c04d4fdae4f4b6f4a2ad29dffff7164f2c24a84aabb  model-routing.js
   a5f662f05037a3ee34b7d267b73ee88535fd149bf866fce3c06e928e1b0d3809  notify.js
   419f53f4b58c780e1e229b0ae7330f69e6dadc1d7a06dae6385eefd500607bc8  queue.js
   45430bf05995be7db800d7058844e050de4afc722b01c599d574eab3840b3bc2  redact.js

@@ -13,7 +13,8 @@
  * CLI:
  *   node scripts/model-routing.js resolve <tier>        -> model_name for --model
  *   node scripts/model-routing.js list                  -> current mapping
- *   node scripts/model-routing.js gateway-config        -> LiteLLM openrouter.yaml
+ *   node scripts/model-routing.js gateway-config        -> LiteLLM config (stdout; bootstrap
+ *                                                          writes it to litellm/openrouter.generated.yaml)
  *   node scripts/model-routing.js set <tier> --slug openrouter/<v>/<m> [--name <model_name>]
  */
 
@@ -28,8 +29,12 @@ const AGENT_ROOT = process.env.AGENT_ROOT || path.dirname(__dirname);
 // state copy does not exist yet, so reads fall back to the image default.
 const ROUTING_DEFAULT = process.env.MODEL_ROUTING || path.join(AGENT_ROOT, 'system', 'model-routing.yaml');
 const ROUTING_STATE = process.env.MODEL_ROUTING_STATE || path.join(AGENT_ROOT, 'state', 'model-routing.yaml');
-// The LiteLLM gateway config regenerated after a change (mounted, read-write).
-const GATEWAY_CONFIG = process.env.GATEWAY_CONFIG_PATH || path.join(AGENT_ROOT, 'infra', 'docker', 'litellm', 'openrouter.yaml');
+// The LiteLLM gateway config regenerated after a change (mounted, read-write). GENERATED and
+// untracked (gitignored in every agent repo): the committed openrouter.yaml beside it is the
+// baseline bootstrap falls back to. It used to be written over the tracked file, which left a
+// provisioned checkout dirty after every model change and made a pull that touched the file
+// conflict on the VM -- the same class as the old sed brand.
+const GATEWAY_CONFIG = process.env.GATEWAY_CONFIG_PATH || path.join(AGENT_ROOT, 'infra', 'docker', 'litellm', 'openrouter.generated.yaml');
 function readPath() { return fs.existsSync(ROUTING_STATE) ? ROUTING_STATE : ROUTING_DEFAULT; }
 const ROUTING = ROUTING_STATE; // back-compat export
 
@@ -41,7 +46,7 @@ const HEADER = `# Model routing -- tier -> model policy, and the single source o
 #   node scripts/model-routing.js set <tier> --slug openrouter/<vendor>/<model>
 #
 # The LiteLLM gateway config is GENERATED from this file:
-#   node scripts/model-routing.js gateway-config > infra/docker/litellm/openrouter.yaml
+#   node scripts/model-routing.js gateway-config > infra/docker/litellm/openrouter.generated.yaml
 # so the gateway can never drift from this policy. Written by the CLI on \`set\`.
 `;
 

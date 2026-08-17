@@ -70,11 +70,10 @@ app.use(sessionParser);
 // post-Access behavior cannot diverge between agents. Aegis service token bypasses;
 // a human after Cloudflare Access gets no redundant app-TOTP (standardize-on-2).
 const requireAuth = auth.requireAuth;
-let AGENT_NAME = 'Agent';
-try {
-  const _m = require('fs').readFileSync(require('path').join(require('path').dirname(__dirname), 'system', 'agent.yaml'), 'utf8').match(/^\s*agent_name:\s*["']?([^"'\n]+?)["']?\s*$/m);
-  if (_m) AGENT_NAME = _m[1].trim();
-} catch (e) { /* default */ }
+// The agent's name by the one rule every surface uses (fleet-core auth.readAgentName): the
+// untracked system/agent.local.yaml overlay cloud-init writes at provision, else agent.yaml's
+// profile default. Same rule the conversational identity uses, so the page and the agent agree.
+const AGENT_NAME = auth.readAgentName(require('path').dirname(__dirname)) || 'Agent';
 auth.mountAuth(app, { webchatDir: __dirname, agentName: AGENT_NAME });
 app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
 

@@ -30,6 +30,21 @@ const path = require('path');
 
 const ACCESS_LOGOUT = '/cdn-cgi/access/logout';
 
+// The agent's name, by the one rule every surface uses. The deploy-time name lives in
+// system/agent.local.yaml -- an untracked overlay cloud-init writes at provision -- so the
+// tracked system/agent.yaml is never edited on a VM (an edit there kept every checkout dirty
+// and made a pull that touched the file conflict). The tracked file's agent_name is the
+// profile's default brand and the fallback for a hand-built tree. Regex, no yaml parser:
+// this runs before anything else in server.js. -> string | null
+function readAgentName(rootDir) {
+  const fs = require('node:fs');
+  const re = /^\s*agent_name:\s*["']?([^"'\n]+?)["']?\s*$/m;
+  for (const f of ['agent.local.yaml', 'agent.yaml']) {
+    try { const m = fs.readFileSync(path.join(rootDir, 'system', f), 'utf8').match(re); if (m && m[1].trim()) return m[1].trim(); } catch { /* next */ }
+  }
+  return null;
+}
+
 function requireAuth(req, res, next) {
   // Aegis service token OR a human session already validated by Cloudflare Access.
   if (req.headers['cf-access-client-id'] || req.headers['cf-access-jwt-assertion']) return next();
@@ -77,4 +92,4 @@ function mountAuth(app, opts) {
   return requireAuth;
 }
 
-module.exports = { requireAuth, mountAuth, serveBranded, ACCESS_LOGOUT };
+module.exports = { requireAuth, mountAuth, serveBranded, readAgentName, ACCESS_LOGOUT };

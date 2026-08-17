@@ -44,3 +44,6 @@ examples/northwind/expectations.json
 state/weekly-reports/.ready-*
 knowledge/people/
 state/capabilities.json
+
+# Deploy-time name overlay written by cloud-init at provision (fleet-core auth.readAgentName reads it first)
+system/agent.local.yaml

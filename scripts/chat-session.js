@@ -82,22 +82,90 @@ function clearSessionId(stateDir, route, model) {
 // Read the agent's conversational identity. A runtime override in state/persona.txt (editable
 // with no rebuild) wins over the baked agent.yaml default. Appended to the system prompt each turn.
 function personaFile(stateDir) { return path.join(stateDir, 'persona.txt'); }
-function readPersona(cwd, stateDir) {
-  if (stateDir) { try { const t = fs.readFileSync(personaFile(stateDir), 'utf8'); if (t && t.trim()) return t.trim(); } catch { /* no override */ } }
+// The baked persona text from agent.yaml. js-yaml (present in every agent image) when it is there;
+// otherwise the one shape agent.yaml is authored in -- `persona: |` followed by an indented block --
+// is read directly, so identity never depends on a parser being installed where this module runs.
+function personaFromYaml(cwd) {
+  let y;
+  try { y = fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8'); } catch { return null; }
   try {
     const yaml = require('js-yaml');
-    const doc = yaml.load(fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8'));
+    const doc = yaml.load(y);
     return (doc && typeof doc.persona === 'string' && doc.persona.trim()) ? doc.persona.trim() : null;
-  } catch { return null; }
+  } catch { /* no parser here: fall through */ }
+  const lines = y.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^persona:\s*\|[-+]?\s*$/.test(l));
+  if (start < 0) return null;
+  const block = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.trim() === '') { block.push(''); continue; }
+    if (!/^\s/.test(l)) break;
+    block.push(l);
+  }
+  const indent = Math.min(...block.filter((l) => l.trim()).map((l) => l.match(/^\s*/)[0].length));
+  const text = block.map((l) => l.slice(Number.isFinite(indent) ? indent : 0)).join('\n').trim();
+  return text || null;
+}
+function readPersona(cwd, stateDir) {
+  const id = readIdentity(cwd);
+  if (stateDir) { try { const t = fs.readFileSync(personaFile(stateDir), 'utf8'); if (t && t.trim()) return renderPersona(t.trim(), id); } catch { /* no override */ } }
+  const p = personaFromYaml(cwd);
+  return p ? renderPersona(p, id) : null;
 }
 function defaultPersona(cwd) {  // the baked agent.yaml persona, ignoring any override
-  try {
-    const yaml = require('js-yaml');
-    const doc = yaml.load(fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8'));
-    return (doc && typeof doc.persona === 'string' && doc.persona.trim()) ? doc.persona.trim() : null;
-  } catch { return null; }
+  const p = personaFromYaml(cwd);
+  return p ? renderPersona(p, readIdentity(cwd)) : null;
 }
 function writePersona(stateDir, text) { try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(personaFile(stateDir), String(text || '')); return true; } catch { return false; } }
+
+// Who this agent IS, from the values that name it. The name comes from the one rule the webchat
+// brand uses (auth.readAgentName: system/agent.local.yaml, the untracked overlay cloud-init writes
+// at provision, else the tracked agent.yaml's default); `profile_name` in agent.yaml is the profile
+// brand (Keel, Castor) -- the role and capabilities, not the name. Regex, no yaml parser, so
+// identity never depends on one being installed. Profile falls back to .provision-flags
+// (AGENT_PROFILE=keel -> Keel) for a tree whose agent.yaml predates the key.
+function readIdentity(cwd) {
+  const out = { agentName: null, profileName: null };
+  try { out.agentName = require('./auth').readAgentName(cwd); } catch { /* auth not beside us: read directly */ }
+  try {
+    const y = fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8');
+    if (!out.agentName) { const a = y.match(/^agent_name:\s*["']?([^"'\n]+?)["']?\s*$/m); if (a) out.agentName = a[1].trim(); }
+    const p = y.match(/^profile_name:\s*["']?([^"'\n]+?)["']?\s*$/m); if (p) out.profileName = p[1].trim();
+  } catch { /* no agent.yaml: no identity */ }
+  if (!out.profileName) {
+    try {
+      const f = fs.readFileSync(path.join(cwd, '.provision-flags'), 'utf8');
+      const m = f.match(/^AGENT_PROFILE=([a-z][a-z0-9-]*)\s*$/m);
+      if (m) out.profileName = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+    } catch { /* hand-built tree without flags */ }
+  }
+  return out;
+}
+
+// Persona text carries {{AGENT_NAME}} / {{PROFILE_NAME}} placeholders (the mechanism is here; the
+// wording is per profile in agent.yaml). Rendered on every read, override or default alike.
+function renderPersona(text, identity) {
+  if (!text) return text;
+  const id = identity || {};
+  return String(text)
+    .replace(/\{\{\s*AGENT_NAME\s*\}\}/g, id.agentName || 'this agent')
+    .replace(/\{\{\s*PROFILE_NAME\s*\}\}/g, id.profileName || 'this');
+}
+
+// The name is a fact, stated on every turn like the model is: a persona that still hardcodes the
+// profile brand, a resumed transcript in which the agent introduced itself by another name, or a
+// memory the model wrote about its own name are all superseded by this line. An agent asked what it
+// is called was answering "Keel" on a VM named probe -- the brand reached the page and the card, not
+// the conversation. Supplies the fact; the manners stay with the persona.
+function identityFact(identity) {
+  const id = identity || {};
+  if (!id.agentName) return '';
+  const prof = id.profileName ? ` You are an instance of the ${id.profileName} profile -- ${id.profileName} names your role and capabilities, not you.` : '';
+  return 'IDENTITY (authoritative, refreshed every turn): your name is "' + id.agentName + '".' + prof +
+    ' Introduce yourself as ' + id.agentName + (id.profileName ? ` (a ${id.profileName} agent when the profile is relevant)` : '') +
+    '. This supersedes any name given earlier in this conversation, in your memory, or in your persona text.';
+}
 function clearPersona(stateDir) { try { fs.unlinkSync(personaFile(stateDir)); } catch { /* already default */ } }
 function hasPersonaOverride(stateDir) { try { fs.accessSync(personaFile(stateDir)); return true; } catch { return false; } }
 
@@ -213,9 +281,11 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
     'different model, and any such statement is now out of date. Never infer the active model from your ' +
     'own self-knowledge or from conversation history; use only this line. State it only if the operator ' +
     'explicitly asks which model is running.';
+  const idFact = identityFact(readIdentity(cwd));
+  const facts = idFact ? (idFact + '\n\n' + modelFact) : modelFact;
   const turnPersona = (persona && persona.trim())
-    ? (persona.trim() + '\n\n' + modelFact)
-    : modelFact;
+    ? (persona.trim() + '\n\n' + facts)
+    : facts;
 
   const start = (sessionId, canRetry) => {
     const args = buildArgs({ prompt, model: runModel, sessionId, persona: turnPersona, webEnabled });
@@ -271,5 +341,6 @@ module.exports = {
   runChatTurn, buildArgs, readSessionId, writeSessionId, clearSessionId,
   sessionFile, eventSessionId, isMissingSessionError, isSessionIncompatError,
   readPersona, defaultPersona, writePersona, clearPersona, hasPersonaOverride, personaFile,
+  readIdentity, renderPersona, identityFact, personaFromYaml,
   readWebAccess, writeWebAccess, webAccessFile, webDirectMap,
 };

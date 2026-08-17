@@ -29,8 +29,25 @@ if [ "$MODE" = "restore" ]; then
   case "$BLOB" in *[!A-Za-z0-9._-]*) echo "backup ABORT: blob name fails safe charset"; exit 1;; esac
   T="$(tok)"; TMP="/tmp/$BLOB"
   curl -fsS -H "Authorization: Bearer $T" -H "$HV" -o "$TMP" "$BASE/$BLOB"
+  # Volume-dir ownership BEFORE the extract: tar as root restores each archived entry's uid/gid,
+  # but a volume directory it has to CREATE (a re-provisioned VM whose containers have never run)
+  # is left root-owned -- and Docker only copies the image's owned content into a volume that is
+  # still empty. The container user (uid 10001) could then read its restored files but not create
+  # new ones in the directory: /color returned EACCES writing state/ui.json on the first region
+  # move, with everything else looking healthy. Capture, extract, then put the ownership back.
+  declare -A OWN=()
+  while read -r v; do d="/var/lib/docker/volumes/$v/_data"; [ -n "$v" ] && [ -d "$d" ] && OWN["$d"]="$(stat -c '%u:%g' "$d")"; done < <(yl volumes)
   tar -xzf "$TMP" -C /
   rm -f "$TMP"
+  while read -r v; do
+    d="/var/lib/docker/volumes/$v/_data"; [ -n "$v" ] && [ -d "$d" ] || continue
+    if [ -n "${OWN[$d]:-}" ]; then chown "${OWN[$d]}" "$d"
+    else
+      # never mounted before: adopt the ownership the archive carried for its own contents
+      inner="$(find "$d" -mindepth 1 -maxdepth 1 -printf '%u:%g\n' 2>/dev/null | head -n 1)"
+      [ -n "$inner" ] && chown "$inner" "$d"
+    fi
+  done < <(yl volumes)
   while read -r ct; do [ -n "$ct" ] && docker restart "$ct" >/dev/null 2>&1 || true; done < <(yl containers)
   echo "restored: $BLOB"
   exit 0

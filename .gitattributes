@@ -1,0 +1,2 @@
+# LF everywhere: vendored fleet-core files are hash-checked at build time; a Windows checkout must not CRLF-ify them
+* text=auto eol=lf

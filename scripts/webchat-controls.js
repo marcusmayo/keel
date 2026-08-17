@@ -187,6 +187,38 @@
     });
   }
 
+  // ---- accent follow ---------------------------------------------------------------
+  // The accent is per-agent state (state/ui.json), and it can be changed from three places:
+  // this page, the control panel, and /color in chat. Each surface read it once at load, so a
+  // change made in one was invisible in the others until a manual refresh. Poll it (cheap: a
+  // small JSON GET) and apply only on a real change, plus an immediate read when the tab
+  // regains focus, so switching windows shows the current colour without a reload. Applying
+  // sets the same CSS variables the page's own loader sets, so this needs nothing from the page.
+  var ACCENT_LAST = null;
+  function applyAccentVars(hex) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(String(hex || ''))) return;
+    var d = document.documentElement;
+    d.style.setProperty('--accent', hex);
+    var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    d.style.setProperty('--accent-text', (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#0a0a0a' : '#fff');
+    ACCENT_LAST = hex;
+  }
+  function pollAccent() {
+    return fetch('/color', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.ok && j.accent && j.accent !== ACCENT_LAST) applyAccentVars(j.accent); })
+      .catch(function () { /* transient: the next tick tries again */ });
+  }
+  function accentFollow() {
+    pollAccent();
+    setInterval(pollAccent, 10000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) pollAccent(); });
+    window.addEventListener('focus', pollAccent);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', accentFollow);
+  else accentFollow();
+
+  window.applyAccentVars = applyAccentVars;
   window.toggleWeb = toggleWeb;
   window.newConversation = newConversation;
   window.runSkill = runSkill;

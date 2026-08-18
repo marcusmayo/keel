@@ -839,13 +839,13 @@ wss.on('connection', (ws, req) => {
         if (code !== 0 && !finalText) {
           ws.send(JSON.stringify({ type: 'error', text: (errText || 'Model call failed').trim().slice(0, 500) }));
         }
-        try { auditRecord(chatSession.turnRecord(who, { model: activeModel, promptBytes: Buffer.byteLength(prompt, 'utf8'), replyBytes: Buffer.byteLength(finalText, 'utf8'), durationMs: Date.now() - t0, rc: code, error: code !== 0 ? errText : '' })); } catch (e) { /* the chain never blocks a reply */ }
+        try { const sid = chatSession.currentSessionId(path.join(KEEL_DIR, 'state'), activeModel); auditRecord(chatSession.turnRecord(who, { model: activeModel, prompt, reply: finalText, sessionId: sid, turnIndex: chatSession.nextTurnIndex(path.join(KEEL_DIR, 'state'), sid), durationMs: Date.now() - t0, rc: code, error: code !== 0 ? errText : '' })); } catch (e) { /* the chain never blocks a reply */ }
         finish();
       }
     );
     child.on('error', (e) => {
       ws.send(JSON.stringify({ type: 'error', text: 'Failed to start: ' + e.message }));
-      try { auditRecord(chatSession.turnRecord(who, { model: activeModel, promptBytes: Buffer.byteLength(prompt, 'utf8'), replyBytes: 0, durationMs: Date.now() - t0, rc: -1, error: 'spawn: ' + e.message })); } catch (e2) { /* ditto */ }
+      try { const sid = chatSession.currentSessionId(path.join(KEEL_DIR, 'state'), activeModel); auditRecord(chatSession.turnRecord(who, { model: activeModel, prompt, reply: '', sessionId: sid, turnIndex: chatSession.nextTurnIndex(path.join(KEEL_DIR, 'state'), sid), durationMs: Date.now() - t0, rc: -1, error: 'spawn: ' + e.message })); } catch (e2) { /* ditto */ }
       finish();
     });
     };

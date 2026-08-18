@@ -392,16 +392,25 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
       return res.json({ ok: true, chain: a.verify(), log: a.LOG });
     } catch (e) { return res.json({ ok: false, error: 'audit log unavailable: ' + String(e).slice(0, 160) }); }
   });
+  // Newest-first rows of this agent's chain. `limit` up to 500 (it silently capped at 200 while
+  // the plane's export asked for 500 -- a truncation nobody could see); `since` / `until` (ISO,
+  // inclusive / exclusive) bound the window so a caller can page backwards through the whole
+  // history: ask with until = the oldest ts it has, repeat until a window comes back short.
+  // Every response says how many records the chain holds and the ts of its oldest, so the caller
+  // can state coverage rather than guess it. Rows are the raw chain entries (prev_hash, hash),
+  // so a caller can re-verify what it received.
   app.get('/audit-recent', requireAuth, (req, res) => {
     try {
       const a = require('./audit-log.js');
-      const n = Math.min(Math.max(parseInt((req.query && req.query.limit) || '25', 10) || 25, 1), 200);
-      let rows = [];
-      try {
-        rows = fs.readFileSync(a.LOG, 'utf8').trim().split('\n').filter(Boolean).slice(-n)
-          .map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean).reverse();
-      } catch (e) { rows = []; }
-      return res.json({ ok: true, rows });
+      const q = req.query || {};
+      const n = Math.min(Math.max(parseInt(q.limit || '25', 10) || 25, 1), 500);
+      const since = q.since ? String(q.since) : null, until = q.until ? String(q.until) : null;
+      let all = [];
+      try { all = fs.readFileSync(a.LOG, 'utf8').trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); }
+      catch (e) { all = []; }
+      const inWindow = all.filter(r => (!since || String(r.ts || '') >= since) && (!until || String(r.ts || '') < until));
+      const rows = inWindow.slice(-n).reverse();
+      return res.json({ ok: true, rows, total: all.length, inWindow: inWindow.length, oldestTs: all.length ? all[0].ts : null, newestTs: all.length ? all[all.length - 1].ts : null });
     } catch (e) { return res.json({ ok: false, error: String(e).slice(0, 160) }); }
   });
 

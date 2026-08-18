@@ -134,20 +134,58 @@ function wsIdentity(req, cwd) {
     return { actor, onBehalfOf: sk.onBehalfOf(req, actor) };
   } catch (e) { return { actor: { src: 'unknown', id: 'unattributed' }, onBehalfOf: null }; }
 }
+// The chain says what was done, never what was said. But a turn must be traceable to its exact
+// prompt for as long as the transcript exists: so the record anchors the content by hash --
+// sha256 of the prompt and of the reply -- and names the session (the claude session the turn
+// ran in; its transcript lives on the agent's persistent volume and rides in the nightly snapshot)
+// and the turn's index within it. A transcript produced later is provable against the chain;
+// the chain itself still holds no words. Retention of transcripts is a separate policy from
+// retention of the chain (metadata, never deleted).
 function turnRecord(identity, t) {
   const id = identity || {};
+  const sha = (s) => (typeof s === 'string' && s.length) ? require('node:crypto').createHash('sha256').update(s, 'utf8').digest('hex') : null;
   const rec = {
     event: 'chat-turn', via: (t && t.via) || 'ws',
     actor: id.actor || { src: 'unknown', id: 'unattributed' },
     onBehalfOf: id.onBehalfOf || null,
     model: (t && t.model) || null,
-    promptBytes: t && typeof t.promptBytes === 'number' ? t.promptBytes : 0,
-    replyBytes: t && typeof t.replyBytes === 'number' ? t.replyBytes : 0,
+    sessionId: (t && t.sessionId) || null,
+    turnIndex: t && typeof t.turnIndex === 'number' ? t.turnIndex : null,
+    promptBytes: t && typeof t.promptBytes === 'number' ? t.promptBytes : (t && typeof t.prompt === 'string' ? Buffer.byteLength(t.prompt, 'utf8') : 0),
+    replyBytes: t && typeof t.replyBytes === 'number' ? t.replyBytes : (t && typeof t.reply === 'string' ? Buffer.byteLength(t.reply, 'utf8') : 0),
+    promptSha256: t ? sha(t.prompt) : null,
+    replySha256: t ? sha(t.reply) : null,
     durationMs: t && typeof t.durationMs === 'number' ? Math.round(t.durationMs) : 0,
     exitCode: t && typeof t.rc === 'number' ? t.rc : null,   // the chain's name for it (skills use exitCode; the export reads it)
   };
   if (t && t.error) rec.error = String(t.error).slice(0, 200);
   return rec;
+}
+// The session a model's turns are running in: whichever of the two session files (gateway route,
+// direct route) is newest for that model. Used to name the session on the turn record.
+function currentSessionId(stateDir, model) {
+  let best = null, bestT = -1;
+  for (const route of ['gateway', 'direct']) {
+    try {
+      const f = sessionFile(stateDir, route, model);
+      const st = fs.statSync(f);
+      if (st.mtimeMs > bestT) { const id = JSON.parse(fs.readFileSync(f, 'utf8')).sessionId || null; if (id) { best = id; bestT = st.mtimeMs; } }
+    } catch { /* not this route */ }
+  }
+  return best;
+}
+// The turn's ordinal within its session: a small counter per session id in state/, incremented
+// per recorded turn. A new session starts at 1; an unknown session counts under 'none'.
+function nextTurnIndex(stateDir, sessionId) {
+  const f = path.join(stateDir, 'chat-turn-index.json');
+  let m = {};
+  try { m = JSON.parse(fs.readFileSync(f, 'utf8')) || {}; } catch { m = {}; }
+  const key = sessionId || 'none';
+  m[key] = (typeof m[key] === 'number' ? m[key] : 0) + 1;
+  // keep the map small: only the newest 20 sessions
+  const keys = Object.keys(m); if (keys.length > 20) for (const k of keys.slice(0, keys.length - 20)) delete m[k];
+  try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(f, JSON.stringify(m)); } catch { /* the chain never blocks on this */ }
+  return m[key];
 }
 
 // Who this agent IS, from the values that name it. The name comes from the one rule the webchat
@@ -373,6 +411,6 @@ module.exports = {
   sessionFile, eventSessionId, isMissingSessionError, isSessionIncompatError,
   readPersona, defaultPersona, writePersona, clearPersona, hasPersonaOverride, personaFile,
   readIdentity, renderPersona, identityFact, personaFromYaml,
-  wsIdentity, turnRecord,
+  wsIdentity, turnRecord, currentSessionId, nextTurnIndex,
   readWebAccess, writeWebAccess, webAccessFile, webDirectMap,
 };

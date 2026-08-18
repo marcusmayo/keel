@@ -782,7 +782,10 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // Who is on this socket (fleet-core rule: verified caller, asserted on-behalf-of), read once;
+  // every turn on it is recorded on this agent's chain -- what it did, for whom, never the text.
+  const who = chatSession.wsIdentity(req, KEEL_DIR);
   ws.on('message', (data) => {
     let prompt;
     try { prompt = JSON.parse(data).prompt; } catch { prompt = String(data); }
@@ -792,6 +795,7 @@ wss.on('connection', (ws) => {
     }
 
     ws.send(JSON.stringify({ type: 'start' }));
+    const t0 = Date.now();
 
     // Multi-turn: fleet-core chat-session resumes ONE rolling session per agent, so the
     // agent's own webchat AND the Aegis relay append to the same conversation. Mechanism
@@ -835,11 +839,13 @@ wss.on('connection', (ws) => {
         if (code !== 0 && !finalText) {
           ws.send(JSON.stringify({ type: 'error', text: (errText || 'Model call failed').trim().slice(0, 500) }));
         }
+        try { auditRecord(chatSession.turnRecord(who, { model: activeModel, promptBytes: Buffer.byteLength(prompt, 'utf8'), replyBytes: Buffer.byteLength(finalText, 'utf8'), durationMs: Date.now() - t0, rc: code, error: code !== 0 ? errText : '' })); } catch (e) { /* the chain never blocks a reply */ }
         finish();
       }
     );
     child.on('error', (e) => {
       ws.send(JSON.stringify({ type: 'error', text: 'Failed to start: ' + e.message }));
+      try { auditRecord(chatSession.turnRecord(who, { model: activeModel, promptBytes: Buffer.byteLength(prompt, 'utf8'), replyBytes: 0, durationMs: Date.now() - t0, rc: -1, error: 'spawn: ' + e.message })); } catch (e2) { /* ditto */ }
       finish();
     });
     };

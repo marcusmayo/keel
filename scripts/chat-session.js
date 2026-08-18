@@ -119,6 +119,37 @@ function defaultPersona(cwd) {  // the baked agent.yaml persona, ignoring any ov
 }
 function writePersona(stateDir, text) { try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(personaFile(stateDir), String(text || '')); return true; } catch { return false; } }
 
+// Who is at the other end of a WS chat, from the upgrade request, and what the agent writes about
+// a turn. The plane relays every console, Telegram, migrate and relay turn to the agent over its
+// WS with the plane's service token as the VERIFIED caller and X-Aegis-On-Behalf-Of as its claim
+// about who was behind it; the HTTP surfaces already record both (skills, file-stage, a2a) and the
+// WS chat recorded neither, so an agent's own chain could not say a turn had happened, let alone
+// for whom. Same rule as HTTP (skills.actorOf / skills.onBehalfOf): the label never replaces the id,
+// the claim is honoured only from a verified caller and is asserted by that caller. The record
+// carries metadata only -- bytes, model, duration, rc -- never the prompt or the reply.
+function wsIdentity(req, cwd) {
+  try {
+    const sk = require('./skills');
+    const actor = sk.actorOf(req, cwd);
+    return { actor, onBehalfOf: sk.onBehalfOf(req, actor) };
+  } catch (e) { return { actor: { src: 'unknown', id: 'unattributed' }, onBehalfOf: null }; }
+}
+function turnRecord(identity, t) {
+  const id = identity || {};
+  const rec = {
+    event: 'chat-turn', via: (t && t.via) || 'ws',
+    actor: id.actor || { src: 'unknown', id: 'unattributed' },
+    onBehalfOf: id.onBehalfOf || null,
+    model: (t && t.model) || null,
+    promptBytes: t && typeof t.promptBytes === 'number' ? t.promptBytes : 0,
+    replyBytes: t && typeof t.replyBytes === 'number' ? t.replyBytes : 0,
+    durationMs: t && typeof t.durationMs === 'number' ? Math.round(t.durationMs) : 0,
+    exitCode: t && typeof t.rc === 'number' ? t.rc : null,   // the chain's name for it (skills use exitCode; the export reads it)
+  };
+  if (t && t.error) rec.error = String(t.error).slice(0, 200);
+  return rec;
+}
+
 // Who this agent IS, from the values that name it. The name comes from the one rule the webchat
 // brand uses (auth.readAgentName: system/agent.local.yaml, the untracked overlay cloud-init writes
 // at provision, else the tracked agent.yaml's default); `profile_name` in agent.yaml is the profile
@@ -342,5 +373,6 @@ module.exports = {
   sessionFile, eventSessionId, isMissingSessionError, isSessionIncompatError,
   readPersona, defaultPersona, writePersona, clearPersona, hasPersonaOverride, personaFile,
   readIdentity, renderPersona, identityFact, personaFromYaml,
+  wsIdentity, turnRecord,
   readWebAccess, writeWebAccess, webAccessFile, webDirectMap,
 };

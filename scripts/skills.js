@@ -454,4 +454,6 @@ function refreshRecordsAsync(cwd, cb) {
 module.exports = {
   mountSkills, loadSkills, runSkillSpawn, refreshRecords, refreshRecordsAsync,
   startSkillJob, getJob, listJobs,
+  // the one identity rule (verified actor, asserted on-behalf-of), shared with the WS chat path
+  actorOf, onBehalfOf, actorLabels,
 };

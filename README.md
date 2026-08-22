@@ -1,5 +1,7 @@
 # Keel
 
+![Keel running locally — the local-mode banner included, because the screenshot should prove the claim the page opens with](docs/hero.png)
+
 Keel is a deterministic-first portfolio management agent. It reconciles work
 items from external sources — Jira exports, backlog spreadsheets, ADO dumps —
 against a canonical portfolio, scores and judges the differences, and proposes
@@ -16,47 +18,92 @@ a different domain (research intake) is
 the keel profile: the reconciliation engine, the webchat, the skills, and the
 compliance surface.
 
-## Run it locally
-
-The fleet runs behind Cloudflare Access — auth is enforced at the edge, and the
-app rejects anything that didn't come through it. That is the right posture for
-a tunnel and a locked door for a laptop, so there is an explicit local mode:
+## Run it with a model
 
 Prerequisite: Docker Desktop running (Windows/macOS) or the docker engine
-(Linux). The commands below are identical on all three — PowerShell included.
+(Linux). The commands are identical on all three, PowerShell included, and one
+OpenRouter key is all you need.
 
 ```bash
 git clone https://github.com/marcusmayo/keel.git
 cd keel/infra/docker
 
-# 1. configure: two keys, one loudly-labelled line
 cp keel.env.example keel.env
-#   set  ANTHROPIC_API_KEY=sk-ant-...      (direct mode; simplest)
-#   set  TOTP_SECRET=scratch               (vestigial; any value)
-#   uncomment  AUTH_MODE=local             (local development ONLY)
+#   set OPENROUTER_API_KEY and ANTHROPIC_API_KEY   (both explained below)
+#   uncomment AUTH_MODE=local
 
-# 2. build + run in one command
-docker compose --env-file ../versions.lock up -d --build webchat
-# open http://127.0.0.1:8443
+cp litellm/openrouter.yaml litellm/openrouter.generated.yaml
+docker compose --env-file ../versions.lock --profile gateway up -d --build
+# open http://127.0.0.1:8443 and send a message
 ```
 
-The `--env-file` feeds the repo's pinned versions into the image build, and
-the build still FAILS if any vendored module drifts from its manifest — same
+Three lines in `keel.env` do the work, and only two of them are keys:
+
+| variable | what it is |
+| --- | --- |
+| `OPENROUTER_API_KEY` | your `sk-or-` key. The gateway holds it and spends it; the agent container never sees it. |
+| `ANTHROPIC_API_KEY` | what the Claude CLI presents as its own credential. Through the gateway that credential is ignored, so paste the **same** `sk-or-` key here. Paste a real `sk-ant-` key instead if you also want web research. |
+| `AUTH_MODE=local` | uncomment it, or the page answers 403. Explained at the end of this section. |
+
+The `cp` of the gateway table is not decoration. The gateway reads
+`openrouter.generated.yaml` — generated from the model table on a real deploy,
+and therefore gitignored — and the committed `openrouter.yaml` beside it is the
+baseline you put in place. To change a key later, edit `keel.env` and run
+`docker compose --env-file ../versions.lock --profile gateway up -d --force-recreate`:
+an env file is read when a container is **created**, not when it restarts.
+
+The `--env-file` feeds the repo's pinned versions into the image build, and the
+build still fails if any vendored module drifts from its manifest — same
 guarantee, no bash, no sudo. (The fleet's own VMs build via
 `infra/scripts/build-image.sh` instead; this path is for laptops.)
 
-`AUTH_MODE=local` disables edge authentication entirely. It is default-off,
-only the literal word `local` activates it, it is read from the environment at
-request time so an image can never bake it on, and every page carries a
-permanent red banner saying the edge is absent. Never set it on anything
-reachable from a network. Unset, the app behaves byte-identically to the
-production posture — a bare request gets 403 — and a test pins that.
+### The models in this build
 
-To route text turns through OpenRouter instead of directly to Anthropic, start
-the optional gateway (`docker compose --profile gateway up -d`) and put an
-`sk-or-` key in `keel.env`; the model picker then accepts any slug on the
-routing table. Web-research turns always run on a direct Anthropic model,
-because real server-side web search only exists there.
+Eight, all served through the gateway, exactly as the picker lists them:
+
+| tier | model |
+| --- | --- |
+| `triage` | glm-5.2 |
+| `routine` *(default)* | deepseek-v4-pro |
+| `complex` | kimi-k3 |
+| `gpt_luna` | gpt-5.6-luna |
+| `gpt_terra` | gpt-5.6-terra |
+| `claude_haiku` | claude-haiku-4.5 |
+| `claude_sonnet` | claude-sonnet-4.6 |
+| `claude_opus` | claude-opus-4.8 |
+
+Switch model for a single conversation with the picker in the page header. To
+change the default, or point a tier at something else entirely:
+
+```bash
+docker exec keel-webchat node scripts/model-routing.js set routine --slug openrouter/<vendor>/<model>
+```
+
+That writes the routing table into the state volume, so it survives a restart.
+Mirror the same `model_name` and slug into `litellm/openrouter.generated.yaml`
+and `docker compose restart gateway`, so the gateway serves what the picker
+offers — the table the picker reads and the table the gateway serves are two
+files, and only you keep them honest.
+
+### Web research
+
+The one thing an OpenRouter key cannot buy. Real server-side web search exists
+only at Anthropic, so a web-ON turn leaves the gateway and goes direct: put a
+real `sk-ant-` key in `ANTHROPIC_API_KEY`, toggle **web** in the header, and
+that turn runs on claude-sonnet-4-6. Web-OFF turns are untouched.
+
+### About `AUTH_MODE=local`
+
+The fleet's auth is edge-only: Cloudflare Access authenticates and the app
+refuses anything that did not arrive through it — exactly right behind a
+tunnel, and a locked door with no key for someone who just ran `docker compose
+up`. Local mode is the explicit opt-in, and it opens both doors: the page and
+the chat socket. It is default-off, only the literal word `local` activates it,
+it is read from the environment at request time so an image can never bake it
+on, and every page carries a permanent red banner saying the edge is absent.
+Never set it on anything reachable from a network. Unset, the app behaves
+byte-identically to the production posture — a bare request gets 403 — and
+tests pin that.
 
 ## What deterministic-first means
 

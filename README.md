@@ -1,270 +1,160 @@
 # Keel
 
-Single-operator portfolio management: deterministic Python tools, YAML state,
-Excel round-trip review, with an LLM reserved for genuine semantic judgment
-only. Keel reconciles work items from external sources (Jira exports, backlog
-spreadsheets) against a canonical portfolio, proposes changes, and leaves every
-mutation to the operator. It runs as a single pinned container -- self-contained
-via Docker Compose on any Docker host, or on Azure via the Bicep templates in
-`infra/`.
+Keel is a deterministic-first portfolio management agent. It reconciles work
+items from external sources — Jira exports, backlog spreadsheets, ADO dumps —
+against a canonical portfolio, scores and judges the differences, and proposes
+changes. It never applies them: every mutation waits for the operator. All of
+the mechanical work is pure Python with no model in the loop; an LLM is
+reserved for the small set of judgments that are genuinely semantic, and even
+those come back as proposals with provenance attached.
+
+Keel is one agent in a small fleet. The provisioning lane, the shared runtime
+core, and the control plane live in
+[`marcusmayo/fleet`](https://github.com/marcusmayo/fleet); a sibling agent with
+a different domain (research intake) is
+[`marcusmayo/castor`](https://github.com/marcusmayo/castor). This repository is
+the keel profile: the reconciliation engine, the webchat, the skills, and the
+compliance surface.
+
+## Run it locally
+
+The fleet runs behind Cloudflare Access — auth is enforced at the edge, and the
+app rejects anything that didn't come through it. That is the right posture for
+a tunnel and a locked door for a laptop, so there is an explicit local mode:
+
+```bash
+git clone https://github.com/marcusmayo/keel.git
+cd keel
+
+# 1. build the image (the build FAILS if any vendored module drifts from its manifest)
+bash infra/scripts/build-image.sh
+
+# 2. configure: two keys, one loudly-labelled line
+cd infra/docker
+cp keel.env.example keel.env
+#   set  ANTHROPIC_API_KEY=sk-ant-...      (direct mode; simplest)
+#   set  TOTP_SECRET=scratch               (vestigial; any value)
+#   uncomment  AUTH_MODE=local             (local development ONLY)
+
+# 3. run
+docker compose up -d webchat
+# open http://127.0.0.1:8443
+```
+
+`AUTH_MODE=local` disables edge authentication entirely. It is default-off,
+only the literal word `local` activates it, it is read from the environment at
+request time so an image can never bake it on, and every page carries a
+permanent red banner saying the edge is absent. Never set it on anything
+reachable from a network. Unset, the app behaves byte-identically to the
+production posture — a bare request gets 403 — and a test pins that.
+
+To route text turns through OpenRouter instead of directly to Anthropic, start
+the optional gateway (`docker compose --profile gateway up -d`) and put an
+`sk-or-` key in `keel.env`; the model picker then accepts any slug on the
+routing table. Web-research turns always run on a direct Anthropic model,
+because real server-side web search only exists there.
+
+## What deterministic-first means
+
+The engine — vendored at `vendor/keel_core/` — is ordinary, testable Python
+with five verbs: `normalize`, `reconcile`, `score`, `judge`, `export`. Parsing,
+matching, arithmetic, spreadsheet round-trips: all deterministic, all
+reproducible, none of it asks a model anything. The LLM enters only where the
+question is semantic — "are these two differently-worded items the same work?" —
+and its answer comes back labelled as a proposal, never as an applied change.
+
+Three rules follow from that and hold everywhere:
+
+- **Propose, don't mutate.** Every change the system derives is staged as
+  PROPOSED and applied only on explicit operator action. This includes edits
+  the engine is certain about.
+- **Provenance at decision time.** A proposal carries the source rows, the
+  rule or prompt that produced it, and the timestamp — attached when the
+  decision is made, not reconstructed later.
+- **Instrument before theorize.** When something looks wrong, the tooling
+  reads the real bytes before anyone patches anything. The audit chain exists
+  so that question is answerable.
 
 ## Architecture
 
-The pipeline is deterministic-first, with one optional LLM lane:
+Two containers, and a literal split between code and state:
 
-    sources (Jira CSV, backlog xlsx)
-        |  normalize            deterministic field mapping -> canonical proposals
-        v
-    reconcile                   overlap-coefficient matching vs state/*.yaml
-        |                       buckets: changed / gap / conflict / ambiguous /
-        |                                duplicate / completed / done_gap
-        |  semantic pass        OPTIONAL: LLM judges only the ambiguous bucket
-        v                       (SAME/DISTINCT, annotated in place -- never moved)
-    score                       WSJF / RICE: LLM proposes factors, pure math computes
-        |
-        v
-    export                      multi-sheet Excel for operator round-trip review
+- **`keel-webchat`** — the agent: Node webchat, the skills router, the engine,
+  the Claude Code CLI for model turns. The image is the code; six named
+  volumes are the state (`state/`, `knowledge/`, `logs/`, `support/`,
+  `exports/`, and the CLI's session store, which is what gives the agent
+  multi-turn memory across restarts).
+- **`keel-gateway`** *(optional profile)* — LiteLLM, digest-pinned official
+  image, mapping the model table to OpenRouter. No host port; only the webchat
+  can reach it.
 
-Everything above the semantic pass runs without any model. The LLM appears in
-exactly two places -- judging ambiguous matches and proposing scoring factors --
-and in both, a deterministic validator owns the result. State lives in plain
-YAML under `state/`; knowledge (stakeholder pages, inbox artifacts) under
-`knowledge/`. The operator surface is a TOTP-protected webchat (Node/Express)
-that dispatches skills via `claude -p`.
+Model routing is one YAML table. The picker accepts any slug on it; web-ON
+turns bypass the gateway for the selected model's direct-Anthropic equivalent
+and return to it when web turns off — the pre-web model is captured and
+restored server-side, so the toggle behaves the same from every surface.
 
-## Design principles
+**Drift is a build failure, twice.** Shared runtime code is vendored from the
+fleet's `core/` with a SHA-256 manifest, and `verify-core.sh` runs inside the
+Dockerfile — a modified vendored file fails the image build. The engine gets
+the same treatment separately: `verify-keel-core.sh` hashes `vendor/keel_core/`
+against its own stamp. Nothing shared can drift silently in either direction.
 
-- Deterministic first. If arithmetic or string matching can decide, no model is
-  consulted. The reconciler's buckets are reproducible byte-for-byte.
-- Propose, don't mutate. Skills write proposals; the operator commits. Deletes
-  are operator-explicit only -- no tool path performs them.
-- Structural boundaries over behavioral rules. Guarantees are enforced by what
-  the tooling *cannot* do, not by policy text. Two examples in this repo: the
-  employer deploy profile hard-aborts if a Tailscale key is present in the
-  environment (an employer VM structurally cannot join a personal tailnet), and
-  the LLM gateway has no host port (nothing outside the compose network can
-  reach it). This can't-versus-shouldn't split at the tool level is the
-  Can't/Shouldn't Framework applied to infrastructure.
-- Provenance at decision time. Reconciliation verdicts, scoring inputs, and
-  image-egress events are recorded when they happen; re-running a model produces
-  a new answer, not the original decision.
-- Source of record is explicit. External systems (Jira) own status truth;
-  Keel reconciles against them rather than silently overwriting.
+## Governance: Can't over Shouldn't
 
-## Requirements
+The framework this fleet is built on prefers structural guarantees to
+behavioral rules: where possible, make the unwanted thing *impossible* rather
+than *discouraged*. Concretely, in this repository:
 
-- Any Docker host (self-contained path), or an Azure subscription + `az` CLI
-  (cloud paths).
-- An Anthropic API key -- or a gateway provider key (see Model selection).
-- A Tailscale account for the personal cloud profile only.
+- **Web access is a structural toggle, default OFF.** When off, the web tools
+  are denied at spawn (`--disallowedTools`) — the agent doesn't promise not to
+  browse; it can't.
+- **Destructive lanes are attested.** A backup restore is a merge by default —
+  nothing written since the snapshot is ever silently deleted. The true rewind
+  exists behind an exact typed phrase, verifies the archive is readable before
+  it wipes anything, and refuses before a single cloud call if the phrase is
+  wrong.
+- **The audit chain is hash-linked.** Every operator action and agent turn is
+  a record with provenance; `/run-audit-verify` re-walks the chain. Failures
+  ledger as failures — a control that half-applied says `incomplete:` and
+  exits non-zero, because a green light that means "probably" is worse than a
+  red one.
+- **The compliance board reads evidence, not intentions.** Network ingress,
+  edge auth, backup wiring, secrets hygiene, vulnerability posture, and a
+  weekly PII scan — each check reads the live system. The scan's findings are
+  recorded, not obeyed: a run that finds things still succeeds and writes what
+  it found, so the signal stays meaningful.
 
-## Quickstart -- self-contained (any Docker host)
+## Operating it
 
-    git clone https://github.com/marcusmayo/keel-portfolio-management.git ~/keel
-    cd ~/keel
-    ./infra/scripts/build-image.sh        # builds keel:latest, tagged with the git SHA
-    ./infra/scripts/bootstrap.sh          # TOTP enrollment + API key prompt -> compose up + smoke
+Day to day the agent is driven through its webchat (or Telegram, via the
+fleet's control plane). Operator skills are HTTP routes with a uniform shape —
+among them `/run-normalize`, `/run-reconcile`, `/run-score-all`, `/run-merge`,
+`/run-apply` (the one that mutates, on explicit call), `/run-audit-verify`, and
+`/run-scan-tree`. `/queue` shows staged intake; processing is always a separate
+operator decision from arrival.
 
-`bootstrap.sh` creates `infra/docker/keel.env` itself (mode 600) -- do not copy
-`keel.env.example`, which only documents the variables. It enrolls a TOTP secret
-(scan the QR into your authenticator), prompts for the Anthropic key with input
-hidden, starts the container, and runs the 8-check smoke test.
+Fleet operations — provisioning, rebuilds, backups, intake from anywhere,
+policy — run from [`marcusmayo/fleet`](https://github.com/marcusmayo/fleet)'s
+`fleetctl`: `up` a contract, `rebuild` at an asserted HEAD, `backup snapshot` /
+`restore` (merge) / `restore --clean` (attested rewind), `intake put` to drop
+files into the agent's staging from the desk. None of that is required to run
+this repository locally.
 
-Publish address: if the host is joined to a tailnet, the webchat binds to the
-tailnet IP; otherwise it binds to `127.0.0.1:8443` -- reach it locally or over
-an SSH tunnel (`ssh -L 8443:127.0.0.1:8443 user@host`).
+## Repository map
 
-## Azure deployment -- personal profile (Tailscale)
+```
+scripts/          fleet-core vendored runtime (hash-manifested) + profile scripts
+gate/             ingress/egress gates, tripwire, audit verify (vendored subset)
+vendor/keel_core/ the deterministic engine, separately hash-stamped
+webchat/          server + chat UI
+system/           agent.yaml, skills.yaml, model-routing.yaml, compliance-controls.yaml
+infra/            Dockerfile, compose, Bicep for the Azure path, bootstrap scripts
+tests/            engine + behavior tests (fixtures use canonical fake data)
+```
 
-The personal profile creates a VM with no public IP and a deny-all inbound NSG;
-the only path in is your tailnet (WireGuard). Cloud-init installs Docker and
-Tailscale, joins the tailnet, clones this repo, and builds the image.
+## Status
 
-1. Generate a Tailscale pre-auth key (admin console): reusable OFF, ephemeral
-   OFF, short expiry -- it is consumed once at boot.
-2. From a clone of this repo:
-
-       export TAILSCALE_AUTH_KEY=tskey-...
-       export KEEL_SSH_PUBKEY="$(cat ~/.ssh/your_key.pub)"
-       export KEEL_LOCATION=eastus2          # optional; default eastus2
-       export KEEL_RG=keel-personal-rg       # optional
-       ./infra/scripts/deploy.sh personal
-
-3. Watch for the node on your tailnet, SSH in as `keeladmin`, and wait for the
-   image build: `sudo tail -f /var/log/keel-image-build.log` (ends with
-   `BUILT keel:<sha>`).
-4. Run `./infra/scripts/bootstrap.sh` (TOTP + key + compose up + smoke), then
-   open `http://<tailnet-ip>:8443`.
-
-Notes: the default VM size is `Standard_B2s_v2` -- if validation fails with
-`QuotaExceeded` on the Bsv2 family, check `az vm list-usage` for a region where
-you have Bsv2 quota and redeploy with `KEEL_LOCATION` set there. Region does not
-matter for a tailnet-only box. If a node named `keel-vm` already exists on the
-tailnet, the new node auto-suffixes (`keel-vm-1`); rename it in the admin
-console after removing the old node.
-
-## Azure deployment -- employer profile (no tailnet)
-
-For running Keel inside an employer network without touching personal
-infrastructure. No Tailscale: `deploy.sh employer` aborts if
-`TAILSCALE_AUTH_KEY` is even set in the environment. Reachability is SSH only,
-restricted to the CIDR you supply; the webchat stays on loopback (use an SSH
-tunnel).
-
-    export KEEL_SSH_CIDR=203.0.113.7/32     # or your corporate range
-    export KEEL_SSH_PUBKEY="$(cat ~/.ssh/your_key.pub)"
-    ./infra/scripts/deploy.sh employer
-
-Then SSH from the allowed CIDR, wait for the image build, run `bootstrap.sh`,
-and tunnel to `127.0.0.1:8443`. No secrets transit cloud-init in either profile;
-the operator injects them at bootstrap.
-
-## Verification
-
-Smoke (run automatically by bootstrap, re-runnable anytime):
-
-    ./infra/scripts/smoke-test.sh keel-webchat "http://<addr>:8443"
-
-Eight checks: node, claude CLI, openpyxl, pyyaml, container health, HTTP,
-zero residue, state writable.
-
-### Running the demo
-
-The Northwind end-to-end demo runs the full reconciliation pipeline against a
-synthetic corpus and verifies every step against a ground-truth oracle (29
-checks, including a deliberately planted ambiguous paraphrase that must land in
-the ambiguous bucket and be judged by the semantic pass). It runs INSIDE the
-container -- where the Python deps and the `claude` CLI resolve -- not on the
-host (a host guard will stop you with the correct command):
-
-    docker exec -w /app keel-webchat bash run_e2e.sh --yes
-
-`--yes` clears the destructive-demo guard: the demo overwrites
-`keel.config.json`, reseeds the corpus, and drafts demo items into `state/`.
-Run it on a fresh deployment, before loading real data. Reset with
-`bash clean_demo.sh --yes` (also in-container).
-
-From the webchat, the same demo is available as a confirm-gated command: type
-`/run-e2e` to read the warning, then `/run-e2e confirm` to execute. Step 9
-calls the LLM and can take 30-60s on cloud providers; the chat waits.
-
-## Using Keel
-
-Log in at `http://<addr>:8443` with a TOTP code. Plain messages go to the model
-with portfolio context; slash commands dispatch skills. Attachments can be
-uploaded for triage; images sent for interpretation are described via a direct
-Anthropic call with the egress audited before the request is made.
-
-Skills (`.claude/commands/`):
-
-Intake and triage
-- `/inbox` -- show documents staged for triage, not yet processed
-- `/classify` -- read-only routing proposal for each staged artifact
-- `/process` -- batch-triage the inbox and graduate each artifact
-- `/triage` -- process an owner-authored note or transcript into the portfolio
-- `/draft-item` -- author description + acceptance criteria for a work item
-- `/decompose` -- break an epic into features, or a feature into stories
-
-Normalization and reconciliation
-- `/normalize-jira` -- map a Jira CSV export into canonical proposals (read-only)
-- `/normalize-backlog` -- map a backlog xlsx into canonical proposals (read-only)
-- `/reconcile` -- five-bucket comparison of proposals vs the portfolio (read-only)
-
-Scoring and planning
-- `/suggest-score` -- propose WSJF/RICE components for operator review
-- `/roadmap` -- hierarchical roadmap from state/*.yaml
-- `/pipeline` -- prioritized portfolio status
-
-Reporting and status
-- `/briefing` -- decision-readiness briefing
-- `/digest` -- daily activity rollup (today or any past day)
-- `/weekly` -- weekly operating priorities and performance report
-- `/status` -- update a work item's status (proposal -> operator confirm)
-- `/portfolio-health` -- cross-check consistency, report mismatches
-- `/show` -- display a single work item in full
-
-Knowledge
-- `/knowledge` -- what context Keel has for grounding
-- `/people` -- everything known about a stakeholder
-- `/draft` -- compose a communication in the operator's voice
-
-Exports: the webchat's Export portfolio and Export multi-source buttons produce
-Excel workbooks; multi-source carries six sheets (Cross-Source, Source-Only,
-Keel-Origin, Unconfirmed, Semantic Matches, Legend) for round-trip review.
-
-## Model selection (gateway mode)
-
-By default `claude -p` calls Anthropic directly using `ANTHROPIC_API_KEY`. To run
-chat and skills on a cheaper or non-Anthropic model, route `claude -p` through the
-bundled LiteLLM gateway. The gateway has no host port -- it is reachable only on the
-internal compose network -- so provider configs run keyless: the network boundary is
-the control, not a proxy key.
-
-`LITELLM_CONFIG` selects the gateway config and is a compose-time shell variable,
-not a `keel.env` variable. Pass it on the `up` line (alongside `KEEL_PUBLISH_ADDR`),
-the same way Compose reads `${...}` substitutions. Putting it in `keel.env` has no
-effect -- the gateway silently falls back to its default config.
-
-OpenRouter (cross-provider aggregator; kimi-k3 / glm-5.2 / deepseek-v4-pro):
-
-    # keel.env -- add:
-    #   ANTHROPIC_BASE_URL=http://gateway:4000
-    #   ANTHROPIC_MODEL=claude-sonnet-4-5                     (alias -> kimi-k3)
-    #   ANTHROPIC_SMALL_FAST_MODEL=claude-3-5-haiku-20241022  (alias -> glm-5.2)
-    #   OPENROUTER_API_KEY=sk-or-v1-...
-    #   (leave ANTHROPIC_API_KEY as your real Anthropic key -- the keyless gateway
-    #    ignores it, and the image-interpret path still uses it against Anthropic)
-
-    sudo env KEEL_PUBLISH_ADDR=<addr> LITELLM_CONFIG=openrouter.yaml \
-      docker compose -f infra/docker/compose.yaml --profile gateway up -d
-
-Verify which provider the gateway actually routes to (ground truth from the proxy's
-routing table, not the model's self-report):
-
-    ./infra/scripts/verify-gateway.sh
-
-Other configs (`gemini.yaml`, `ollama.yaml`) live in `infra/docker/litellm/`; see
-`infra/docs/gateway-findings.md` for the LiteLLM >=1.92 keyless rationale and
-`infra/docs/local-model-findings.md` for the local-GPU leg.
-
-## Data persistence
-
-Application state lives in four named Docker volumes (`keel-state`,
-`keel-knowledge`, `keel-logs`, `keel-support`), mounted at `/app/state`,
-`/app/knowledge`, `/app/logs`, and `/app/support`. The image is code; the volumes
-are state. Data written there survives container restarts, `docker compose down`,
-and VM reboots. It is destroyed only by `docker compose down -v`, an explicit
-`docker volume rm`, or deleting the VM.
-
-## Security posture
-
-- Personal profile: no public IP, deny-all inbound NSG; transport is your
-  tailnet (WireGuard). Employer profile: SSH scoped to one CIDR, webchat on
-  loopback, and a structural guard against tailnet membership.
-- Webchat auth is TOTP; `keel.env` is created mode 600 and never committed.
-- No secrets transit cloud-init; the pre-auth key used at boot is scrubbed from
-  cloud-init artifacts.
-- The LLM gateway is keyless by design and unreachable from outside the compose
-  network.
-- Outbound image interpretation is audited before egress (model, hash,
-  attestation recorded).
-
-## Repository layout
-
-    tools/               deterministic pipeline (normalize, reconcile, score, export)
-    .claude/commands/    the 21 skills dispatched by the webchat
-    webchat/             Node/Express operator surface (TOTP, skills, exports)
-    examples/northwind/  synthetic demo corpus generator
-    system/              operator + voice profiles
-    infra/               Bicep (personal/employer), cloud-init, compose, LiteLLM
-                         configs, scripts (deploy, bootstrap, smoke, verify-gateway),
-                         findings docs
-    run_e2e.sh           10-step demo pipeline (in-container; oracle-verified)
-    clean_demo.sh        reset the demo to a clean state
-
-## License
-
-Apache-2.0. Author: Marcus Mayo -- X: [@MarcusMayoAI](https://x.com/MarcusMayoAI)
--- GitHub: [marcusmayo](https://github.com/marcusmayo)
--- LinkedIn: [marcusmayo](https://www.linkedin.com/in/marcusmayo/)
-
+Live, small, and deliberately boring where boring is a feature. The interesting
+parts are the guarantees: builds that fail on drift, restores that say which of
+two things they are, an audit trail that can be re-verified, and a model kept
+on a leash short enough to see.

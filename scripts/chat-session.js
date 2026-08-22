@@ -255,7 +255,56 @@ function readWebAccess(stateDir) {
   try { return JSON.parse(fs.readFileSync(webAccessFile(stateDir), 'utf8')).enabled === true; } catch { return false; }
 }
 function writeWebAccess(stateDir, enabled) {
-  try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(webAccessFile(stateDir), JSON.stringify({ enabled: enabled === true, updated: new Date().toISOString() }, null, 2)); return true; } catch { return false; }
+  return writeWebState(stateDir, { enabled: enabled === true });
+}
+// The whole runtime web state, prevModel included. The pre-web model used to live in a browser
+// tab (PREV_SLUG in webchat-controls), so web toggled OFF from Telegram, the panel, another tab
+// or after a reload restored nothing and the agent quietly stayed on the direct-Anthropic model.
+// A restore that only works from the surface that did the enable is not a restore; the state
+// lives HERE now, and the toggle endpoint is the one place that captures and restores it.
+function readWebState(stateDir) {
+  try {
+    const o = JSON.parse(fs.readFileSync(webAccessFile(stateDir), 'utf8')) || {};
+    return { enabled: o.enabled === true, prevModel: typeof o.prevModel === 'string' && o.prevModel ? o.prevModel : null };
+  } catch { return { enabled: false, prevModel: null }; }
+}
+function writeWebState(stateDir, st) {
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    const o = { enabled: (st && st.enabled) === true, updated: new Date().toISOString() };
+    if (st && typeof st.prevModel === 'string' && st.prevModel) o.prevModel = st.prevModel;
+    fs.writeFileSync(webAccessFile(stateDir), JSON.stringify(o, null, 2));
+    return true;
+  } catch { return false; }
+}
+
+// The toggle DECISION, pure so it is testable without a webchat: given where we are and where
+// the operator wants to be, say what to write and what to select. `tiers` is the routing table
+// (the single source of model policy), `webMap` maps gateway model_name -> direct model, and a
+// model is web-capable when its tier carries a mapped name. Rules:
+//   enable, active not web-capable  -> select the first web-capable tier, CAPTURE the active
+//   enable, active already capable  -> no switch, nothing captured
+//   disable, prevModel on a tier    -> select it back, CLEAR the capture
+//   disable, prevModel off the table-> clear it and say so (the table changed; guessing is worse)
+//   same-state toggle               -> keep everything, including a held capture
+function webToggleDecision({ enable, state, tiers, webMap, active }) {
+  const slugOf = (t) => t && (t.slug || t.openrouter_slug) || null;
+  const capable = (t) => !!(t && t.model_name && webMap && webMap[t.model_name]);
+  const st = state || { enabled: false, prevModel: null };
+  if (enable === st.enabled) return { write: { enabled: st.enabled, prevModel: st.prevModel }, select: null, switched: null, restored: null, note: 'no-op' };
+  if (enable) {
+    const activeTier = (tiers || []).find((t) => slugOf(t) === active) || null;
+    if (capable(activeTier)) return { write: { enabled: true, prevModel: null }, select: null, switched: null, restored: null, note: 'active model already web-capable' };
+    const target = (tiers || []).find(capable) || null;
+    const tslug = slugOf(target);
+    if (!tslug) return { write: { enabled: true, prevModel: null }, select: null, switched: null, restored: null, note: 'no web-capable model on any tier (best-effort gateway web)' };
+    return { write: { enabled: true, prevModel: active || null }, select: tslug, switched: { from: active || null, to: tslug }, restored: null, note: null };
+  }
+  const prev = st.prevModel;
+  if (!prev) return { write: { enabled: false, prevModel: null }, select: null, switched: null, restored: null, note: 'nothing captured to restore' };
+  const onTier = (tiers || []).some((t) => slugOf(t) === prev);
+  if (!onTier) return { write: { enabled: false, prevModel: null }, select: null, switched: null, restored: null, note: 'captured model ' + prev + ' is no longer on a routing tier; kept the current model' };
+  return { write: { enabled: false, prevModel: null }, select: prev, switched: null, restored: { to: prev }, note: null };
 }
 
 // Per-agent web-capable map (WEB_DIRECT_MODELS): comma list of "gatewayName=directModel"
@@ -412,5 +461,5 @@ module.exports = {
   readPersona, defaultPersona, writePersona, clearPersona, hasPersonaOverride, personaFile,
   readIdentity, renderPersona, identityFact, personaFromYaml,
   wsIdentity, turnRecord, currentSessionId, nextTurnIndex,
-  readWebAccess, writeWebAccess, webAccessFile, webDirectMap,
+  readWebAccess, writeWebAccess, readWebState, writeWebState, webToggleDecision, webAccessFile, webDirectMap,
 };

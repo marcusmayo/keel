@@ -10,7 +10,7 @@
   //   ChatControls.init({ notify: add });      // castor
   // The header button keeps its inline onclick="toggleWeb()" -- provided as a global below.
 
-  var MODELS = [], MODEL_ACTIVE = null, WEB_ON = false, webBusy = 0, PREV_SLUG = null;
+  var MODELS = [], MODEL_ACTIVE = null, WEB_ON = false, webBusy = 0;
   var notify = function () {};
 
   function webLabel(d){const m=String(d||'').match(/^claude-([a-z]+)-([0-9]+)-([0-9]+)/i);return m?('Claude '+m[1].charAt(0).toUpperCase()+m[1].slice(1)+' '+m[2]+'.'+m[3]):String(d||'');}
@@ -35,21 +35,15 @@
       catch(e){notify('Model change failed: '+e,'err');}
     };
   }
-  async function ensureWebModel(){
-    if(!WEB_ON)return;
-    const list=MODELS.filter(o=>o.web);
-    if(!list.length||list.some(o=>o.slug===MODEL_ACTIVE))return;
-    const t=list[0];
-    try{const r=await(await fetch('/model/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:t.slug})})).json();
-      if(r.ok){PREV_SLUG=MODEL_ACTIVE;MODEL_ACTIVE=t.slug;notify('Web research needs a web-capable model - switched to '+webLabel(t.webModel||t.slug),'sys');renderModelSel();}}catch(e){}
+  // Model capture/restore on the web toggle lives SERVER-SIDE now (state/web-access.json via
+  // /web-access). It used to be a tab variable here, so web toggled off from Telegram, the
+  // panel, another tab or after a reload restored nothing. The client just reflects the server.
+  async function refreshModel(){
+    try{const d=await(await fetch('/model')).json();
+      if(d&&d.ok){MODELS=d.options||[];MODEL_ACTIVE=d.active||null;WEB_ON=!!d.webActive;renderWeb();renderModelSel();}}catch(e){}
   }
-  // Web turned OFF: restore the model that was active before the auto-switch (best effort).
-  async function restorePrevModel(){
-    if(WEB_ON||!PREV_SLUG||PREV_SLUG===MODEL_ACTIVE){PREV_SLUG=null;return;}
-    const t=PREV_SLUG; PREV_SLUG=null;
-    try{const r=await(await fetch('/model/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:t})})).json();
-      if(r.ok){MODEL_ACTIVE=t;notify('Restored pre-web model','sys');renderModelSel();}}catch(e){}
-  }
+  async function toggleWeb(){const next=!WEB_ON;webBusy=Date.now();try{const r=await(await fetch('/web-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})})).json();if(r&&r.ok){WEB_ON=!!r.enabled;if(r.model)MODEL_ACTIVE=r.model;renderWeb();renderModelSel();notify(r.message||('Web research '+(WEB_ON?'ENABLED':'DISABLED')),'sys');}else{notify('Web toggle failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){notify('Web toggle failed: '+e,'err');}finally{webBusy=Date.now();}}
+  async function syncWeb(){if(Date.now()-webBusy<4000)return;try{const r=await(await fetch('/web-access')).json();if(r&&r.ok&&!!r.enabled!==WEB_ON){WEB_ON=!!r.enabled;refreshModel();}}catch(e){}}
   // New conversation: rotate BOTH route sessions server-side; the agent forgets this chat.
   async function newConversation(){
     try{const r=await(await fetch('/session/reset',{method:'POST'})).json();
@@ -61,10 +55,8 @@
   // OFF (default) is a structural boundary -- the turn denies WebSearch/WebFetch, so the agent
   // cannot reach the web.
   function renderWeb(){const b=document.getElementById('webToggle');if(!b)return;b.textContent='web: '+(WEB_ON?'ON':'OFF');b.style.color=WEB_ON?'var(--accent)':'#aaa';b.title='Web research is '+(WEB_ON?'ON - the agent can search/fetch the web':'OFF - structural boundary: the agent cannot reach the web')+'. Click to toggle.';}
-  async function toggleWeb(){const next=!WEB_ON;webBusy=Date.now();try{const r=await(await fetch('/web-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})})).json();if(r&&r.ok){WEB_ON=!!r.enabled;renderWeb();renderModelSel();notify(r.message||('Web research '+(WEB_ON?'ENABLED':'DISABLED')),'sys');if(WEB_ON)ensureWebModel();else restorePrevModel();}else{notify('Web toggle failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){notify('Web toggle failed: '+e,'err');}finally{webBusy=Date.now();}}
   // Reflect toggles made elsewhere (e.g. the Aegis panel) without a reload: poll the shared
   // state, update only on change, don't clobber a state just set here (webBusy window).
-  async function syncWeb(){if(Date.now()-webBusy<4000)return;try{const r=await(await fetch('/web-access')).json();if(r&&r.ok&&!!r.enabled!==WEB_ON){WEB_ON=!!r.enabled;renderWeb();renderModelSel();if(WEB_ON)ensureWebModel();else restorePrevModel();}}catch(e){}}
 
   function init(opts){
     if(opts&&typeof opts.notify==='function')notify=opts.notify;

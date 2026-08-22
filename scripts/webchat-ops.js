@@ -107,10 +107,29 @@ function mountChatOps(app, opts) {
   app.get('/web-access', requireAuth, (req, res) => {
     res.json({ ok: true, enabled: chatSession.readWebAccess(stateDir) });
   });
+  // The toggle is AUTHORITATIVE here, not in whichever surface clicked it. It captures the
+  // active model when enabling forces a switch, and restores it when disabling — so Telegram,
+  // the panel, a second tab and a reloaded page all get the same behaviour, because the state
+  // lives in state/web-access.json rather than in a browser variable that dies with the tab.
   app.post('/web-access', requireAuth, (req, res) => {
-    const enabled = !!(req.body && req.body.enabled);
-    chatSession.writeWebAccess(stateDir, enabled);
-    res.json({ ok: true, enabled, message: 'Web research ' + (enabled ? 'ENABLED' : 'DISABLED') + ' (applies to the next message).' });
+    try {
+      const enable = !!(req.body && req.body.enabled);
+      const d = chatSession.webToggleDecision({
+        enable,
+        state: chatSession.readWebState(stateDir),
+        tiers: modelRouting.list(),
+        webMap: chatSession.webDirectMap(process.env),
+        active: modelRouting.getSelected() || null,
+      });
+      if (d.select) execFileSync('node', ['scripts/model-routing.js', 'set-selected', '--slug', d.select], { cwd, encoding: 'utf8', timeout: 15000 });
+      chatSession.writeWebState(stateDir, d.write);
+      try { audit({ event: 'web-access', enabled: enable, switched: d.switched || undefined, restored: d.restored || undefined, note: d.note || undefined }); } catch (e) { /* best effort */ }
+      const parts = ['Web research ' + (enable ? 'ENABLED' : 'DISABLED')];
+      if (d.switched) parts.push('switched to ' + d.switched.to + ' (web-capable); your model comes back when web turns off');
+      if (d.restored) parts.push('restored ' + d.restored.to);
+      if (d.note && !d.switched && !d.restored && d.note !== 'no-op') parts.push(d.note);
+      res.json({ ok: true, enabled: enable, model: modelRouting.getSelected() || null, switched: d.switched, restored: d.restored, message: parts.join(' — ') + ' (applies to the next message).' });
+    } catch (e) { res.status(500).json({ ok: false, error: (e.stdout || '') + (e.stderr || '') + String(e.message || e) }); }
   });
 
   // Fleet protection: MIRROR + REQUEST lane only. The authoritative state is the

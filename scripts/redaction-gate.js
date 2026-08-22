@@ -32,6 +32,14 @@ const PATTERNS = [
   ['SSN',          /\b\d{3}-\d{2}-\d{4}\b/g],
   ['PRIVATE_KEY',  /-----BEGIN [A-Z ]*PRIVATE KEY-----/g],
   ['AWS_KEY',      /\bAKIA[0-9A-Z]{16}\b/g],
+  // This fleet runs on AZURE, and until these three existed the set detected AWS, GitHub and
+  // Slack shapes while being blind to its own native secret class: a leaked storage account key,
+  // a SAS signature, or a connection string would have sailed through the weekly scan unflagged.
+  // Each is context-anchored (AccountKey=, sig=, or the exact 86+'==' base64 shape) so a match
+  // is almost certainly real -- the same specificity rule as every pattern above.
+  ['AZURE_CONN',   /\bAccountKey=[A-Za-z0-9+/=]{20,}/g],
+  ['AZURE_SAS',    /[?&]sig=[A-Za-z0-9%+/]{20,}(=|%3[Dd]){0,2}/g],
+  ['AZURE_KEY',    /\b[A-Za-z0-9+/]{86}==(?![A-Za-z0-9+/=])/g],
   ['API_KEY_SK',   /\bsk-[A-Za-z0-9]{20,}\b/g],
   ['GITHUB_PAT',   /\bghp_[A-Za-z0-9]{36}\b/g],
   ['SLACK_TOKEN',  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g],

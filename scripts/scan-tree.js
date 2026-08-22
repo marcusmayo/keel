@@ -15,12 +15,27 @@ const fs = require('fs');
 const path = require('path');
 const { PATTERNS } = require('./redaction-gate');
 
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'archive']);
+// tests/ carries canonical FAKE fixtures on purpose (AWS's documented example key, 123-45-6789,
+// 555 numbers) -- the first live weekly scan reported 17 findings on a fresh notebook agent and
+// every one was a fixture. A weekly signal that cries seventeen every Sunday trains its reader
+// to ignore the week it says eighteen, and the eighteenth is the one that matters.
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'archive', 'tests']);
 const SKIP_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.pdf', '.xlsx', '.xls',
                           '.zip', '.gz', '.woff', '.woff2', '.ico', '.age', '.msg']);
 // Files that legitimately contain example patterns.
 const SKIP_FILE = new Set(['never-egress.example.json', 'scan-tree.js', 'redaction-gate.js', 'ado_sample.csv',
-                           'compliance-checks.js']);   // carries the seeded PII canary the tripwire self-test fires against
+                           'compliance-checks.js',     // carries the seeded PII canary the tripwire self-test fires against
+                           'run_e2e.sh',               // seeds the same canary end-to-end, by design
+                           'pii-scan.log']);           // the scan's OWN report quotes its findings -- without this the
+                                                       // second weekly run reads the first one's log and flags itself,
+                                                       // and the count ratchets upward forever
+
+// The fleet's one real operational address appears in audit chains as the ACTOR of attested and
+// operator actions -- that is the record doing its job, not a leak. It is allowed by exact
+// string, not by skipping audit files: audit stays scanned, so a real address or an SSN echoed
+// into a detail field still fires, while the expected actor identity does not.
+const ALLOWED_LITERALS = ['keel@keel-pm.com'];
+const allowed = (sample) => ALLOWED_LITERALS.some((a) => String(sample || '').includes(a));
 
 function walk(dir, out) {
   let entries;
@@ -53,6 +68,8 @@ function scan(root) {
         if (m) {
           // RFC 2606 reserved documentation domains are placeholders, not data.
           if (label === 'EMAIL' && /@(example\.(com|org|net)|[^\s@]+\.(invalid|test))$/i.test(m[0])) continue;
+          // the fleet's own operational identity, allowed by exact string wherever it appears
+          if (allowed(m[0])) continue;
           findings.push({ file: f, line: i + 1, label, sample: m[0].slice(0, 12) + '…' });
         }
       }

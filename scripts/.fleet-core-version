@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 34ff4d5
-synced_at: 2026-08-22T17:07:24Z
+fleet_core_commit: 2dbb807
+synced_at: 2026-08-22T17:30:51Z
 manifest:
   72ecd6fd0323f5503c9936d1f0ec861bbabf885be1969cacd88883e8fcd60f11  audit-log.js
   985dfefa0d9025758570c3b94b184d7a44b6674f719972919e5c4a7a03097d77  auth.js
@@ -17,8 +17,8 @@ manifest:
   849e4e6603b57efe1cb9602a9ada7460be13a78eea11ddcb85479b06fdeeb1a6  pii-scan.sh
   419f53f4b58c780e1e229b0ae7330f69e6dadc1d7a06dae6385eefd500607bc8  queue.js
   45430bf05995be7db800d7058844e050de4afc722b01c599d574eab3840b3bc2  redact.js
-  bf4fac3071a1286debff9c83f604d1a940e46153cd7b653ea750da03e7f314e1  redaction-gate.js
-  e024da2baa9a39e5ca3b3d26dcbb4552245335a4890626aac09b510d278f6224  scan-tree.js
+  f5d6f41bd6b94e4df9e73130d4eb5818d93cfc65c41cba17c685063b38993540  redaction-gate.js
+  2f3a7695fefe267593875a4d5b3dd068e60dfe5a7b1f6692d75f58868ba46c65  scan-tree.js
   470b7a4f2f79e827c041fc74f75bb9c35664d9093d02975a85f74a88264b5b45  send-email.js
   9cce61c45537d82d1dd1a52349983083dbc0e453a8483ea6aa23cd6dcad55576  skills.js
   b5289e424bfee1f2be32ab48b8649bb06d653025d4ae4b8faa8db7e359aa97f5  telegram-bot.js

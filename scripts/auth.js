@@ -14,6 +14,11 @@
  *       identical)                                -> next()
  *     - else                                       -> 403 (Access authentication required)
  *
+ *   wsUpgradeAllowed(req) -> boolean
+ *     The SAME policy for the WebSocket upgrade. requireAuth is the HTTP door and this is
+ *     the socket door; they must answer to one predicate or a mode that opens one leaves
+ *     the other shut. server.js calls this from its 'upgrade' handler.
+ *
  *   mountAuth(app, { webchatDir, agentName })
  *       GET  /         requireAuth-guarded, serves chat.html (brand-injected)
  *       GET  /logout   ends the Cloudflare Access session (302 -> /cdn-cgi/access/logout)
@@ -72,6 +77,18 @@ function requireAuth(req, res, next) {
   return res.status(403).type('text').send('Access authentication required');
 }
 
+// The socket door, and the reason it exists as a function: the WS upgrade handler used to
+// re-implement requireAuth's checks inline. requireAuth then grew its local-mode branch and the
+// copy did not, so AUTH_MODE=local opened every page and kept 401ing the upgrade -- a laptop got
+// a rendered chat whose Send button did nothing and said nothing. One predicate, called by both
+// doors, is the only shape that cannot drift again. -> boolean
+function wsUpgradeAllowed(req) {
+  if (isLocalMode()) return true;
+  const h = (req && req.headers) || {};
+  if (h['cf-access-client-id'] || h['cf-access-jwt-assertion']) return true;
+  return !!(req && req.session && req.session.authed);
+}
+
 function serveBranded(file, agentName) {
   return function (req, res) {
     let html;
@@ -111,4 +128,4 @@ function mountAuth(app, opts) {
   return requireAuth;
 }
 
-module.exports = { requireAuth, mountAuth, serveBranded, readAgentName, ACCESS_LOGOUT, isLocalMode };
+module.exports = { requireAuth, wsUpgradeAllowed, mountAuth, serveBranded, readAgentName, ACCESS_LOGOUT, isLocalMode };

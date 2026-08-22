@@ -770,10 +770,11 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
   sessionParser(req, {}, () => {
-    // Mirror requireAuth: Cloudflare Access validated the request at the edge
-    // (Cf-Access-* header present == authenticated), OR a direct session is authed.
-    const cfAuthed = req.headers['cf-access-jwt-assertion'] || req.headers['cf-access-client-id'];
-    if (!cfAuthed && (!req.session || !req.session.authed)) {
+    // One policy, one copy. This used to re-implement requireAuth's checks inline; requireAuth
+    // then grew its AUTH_MODE=local branch and this copy did not, so local mode opened every
+    // page and 401ed every upgrade -- a laptop got a chat whose Send button did nothing and
+    // said nothing. Both doors now ask the same predicate in scripts/auth.js.
+    if (!auth.wsUpgradeAllowed(req)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;

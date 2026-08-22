@@ -25,10 +25,22 @@ MODE="${1:-push}"
 BASE="https://$ACC.blob.core.windows.net/$AGENT"
 HV="x-ms-version: 2021-08-06"
 if [ "$MODE" = "restore" ]; then
-  BLOB="${2:?usage: agent-backup restore <blob>}"
+  BLOB="${2:?usage: agent-backup restore <blob> [--clean]}"
   case "$BLOB" in *[!A-Za-z0-9._-]*) echo "backup ABORT: blob name fails safe charset"; exit 1;; esac
+  CLEAN=0; [ "${3:-}" = "--clean" ] && CLEAN=1
   T="$(tok)"; TMP="/tmp/$BLOB"
   curl -fsS -H "Authorization: Bearer $T" -H "$HV" -o "$TMP" "$BASE/$BLOB"
+  # The archive is proven READABLE before anything is touched. In clean mode the volumes are
+  # about to be emptied, and wiping first would turn a corrupt download into total loss; the
+  # order here -- download, verify, only then wipe -- is the whole safety of the flag.
+  tar -tzf "$TMP" >/dev/null || { rm -f "$TMP"; echo "backup ABORT: $BLOB is not a readable archive -- nothing was touched"; exit 1; }
+  if [ "$CLEAN" = 1 ]; then
+    # A REWIND, not a merge: containers stopped, every volume emptied, then the snapshot is the
+    # whole truth. Files created since it are GONE by design -- fleetctl gates this behind a
+    # typed attestation precisely because there is no undo past this line.
+    while read -r ct; do [ -n "$ct" ] && docker stop "$ct" >/dev/null 2>&1 || true; done < <(yl containers)
+    while read -r v; do d="/var/lib/docker/volumes/$v/_data"; [ -n "$v" ] && [ -d "$d" ] && find "$d" -mindepth 1 -delete; done < <(yl volumes)
+  fi
   # Volume-dir ownership BEFORE the extract: tar as root restores each archived entry's uid/gid,
   # but a volume directory it has to CREATE (a re-provisioned VM whose containers have never run)
   # is left root-owned -- and Docker only copies the image's owned content into a volume that is
@@ -49,7 +61,8 @@ if [ "$MODE" = "restore" ]; then
     fi
   done < <(yl volumes)
   while read -r ct; do [ -n "$ct" ] && docker restart "$ct" >/dev/null 2>&1 || true; done < <(yl containers)
-  echo "restored: $BLOB"
+  if [ "$CLEAN" = 1 ]; then echo "restored: $BLOB (CLEAN -- the snapshot is now the whole truth of the volumes)"
+  else echo "restored: $BLOB"; fi
   exit 0
 fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"; SUF=""; [ "$MODE" = "final" ] && SUF="-final"

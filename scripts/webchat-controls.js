@@ -58,8 +58,21 @@
   // Reflect toggles made elsewhere (e.g. the Aegis panel) without a reload: poll the shared
   // state, update only on change, don't clobber a state just set here (webBusy window).
 
+  // AUTH_MODE=local banner: the edge is absent and every request is trusted, so the page says
+  // so, permanently and in red, on every load. A quiet local mode would be indistinguishable
+  // from a production door left open.
+  async function authBanner(){
+    try{const r=await(await fetch('/auth-mode')).json();
+      if(r&&r.local&&!document.getElementById('localAuthBanner')){
+        const b=document.createElement('div');b.id='localAuthBanner';
+        b.style.cssText='position:sticky;top:0;z-index:9999;background:#7f1d1d;color:#fff;padding:6px 12px;font:12px/1.5 monospace;text-align:center';
+        b.textContent='AUTH_MODE=local \u2014 edge authentication is OFF; every request is trusted. Local development only. Never expose this port to a network.';
+        document.body.prepend(b);
+      }}catch(e){}
+  }
   function init(opts){
     if(opts&&typeof opts.notify==='function')notify=opts.notify;
+    authBanner();
     fetch('/model').then(r=>r.json()).then(d=>{
       if(d&&d.ok){MODELS=d.options||[];MODEL_ACTIVE=d.active||null;WEB_ON=!!d.webActive;if(d.importBtn===false){window.__noImportBtn=1;var eb=document.getElementById('importBtn');if(eb)eb.remove();}}
       renderWeb();renderModelSel();

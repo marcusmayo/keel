@@ -104,6 +104,12 @@ function mountChatOps(app, opts) {
 
   // Web research access: per-agent runtime toggle (default OFF). When off, the agent's turns deny
   // the web tools structurally (--disallowedTools), so it cannot reach the web.
+  // The banner's source of truth. Unauthenticated ON PURPOSE: when local mode is on there is no
+  // auth to require, and when it is off this endpoint must still answer so the (absent) banner
+  // logic costs nothing -- it leaks only which mode the operator already chose.
+  app.get('/auth-mode', (req, res) => {
+    res.json({ ok: true, local: require('./auth').isLocalMode() });
+  });
   app.get('/web-access', requireAuth, (req, res) => {
     res.json({ ok: true, enabled: chatSession.readWebAccess(stateDir) });
   });

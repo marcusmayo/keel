@@ -45,7 +45,26 @@ function readAgentName(rootDir) {
   return null;
 }
 
+// AUTH_MODE=local -- the stranger's front door, and ONLY theirs. The fleet's auth is edge-only
+// by design: the webchat trusts Cloudflare Access headers and 403s everything else, which is
+// exactly right behind a tunnel and exactly wrong for someone who just ran `docker compose up`
+// on a laptop -- their quickstart ends at a locked door with no Cloudflare in front of it.
+// This is an EXPLICIT opt-in with three properties, each load-bearing:
+//   1. only the literal string 'local' relaxes anything -- unset, empty, or any other value
+//      behaves byte-identically to before this existed (pinned by test);
+//   2. it is read from the environment at request time, so nothing baked into an image can
+//      turn it on -- only the operator running the container can;
+//   3. it is LOUD: every page carries a banner saying the edge is absent (webchat-controls
+//      reads /auth-mode), and the boot log says so once.
+const authMode = () => (process.env.AUTH_MODE || '').trim().toLowerCase();
+const isLocalMode = () => authMode() === 'local';
+let saidLocal = false;
+
 function requireAuth(req, res, next) {
+  if (isLocalMode()) {
+    if (!saidLocal) { saidLocal = true; console.warn('[auth] AUTH_MODE=local -- edge auth DISABLED; every request is trusted. Never expose this to a network.'); }
+    return next();
+  }
   // Aegis service token OR a human session already validated by Cloudflare Access.
   if (req.headers['cf-access-client-id'] || req.headers['cf-access-jwt-assertion']) return next();
   // Kept in sync with the WS upgrade check; never set by a browser now that app-TOTP is gone.
@@ -92,4 +111,4 @@ function mountAuth(app, opts) {
   return requireAuth;
 }
 
-module.exports = { requireAuth, mountAuth, serveBranded, readAgentName, ACCESS_LOGOUT };
+module.exports = { requireAuth, mountAuth, serveBranded, readAgentName, ACCESS_LOGOUT, isLocalMode };

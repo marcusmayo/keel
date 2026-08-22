@@ -5,6 +5,26 @@ name: keel
 services:
   webchat:
     image: keel:latest
+    # compose can BUILD this image itself (docker compose up -d --build webchat) -- the
+    # cross-platform stranger path; no bash, no sudo. The fleet's VM bootstrap still builds
+    # via build-image.sh and tags keel:latest first, so compose finds the image and this
+    # block is inert there: up without --build never rebuilds an image that exists.
+    # compose can BUILD the image itself -- the cross-platform stranger path (no bash, no sudo):
+    #     docker compose --env-file ../versions.lock up -d --build webchat
+    # The --env-file feeds the pinned versions into the build args below; versions.lock stays the
+    # single source. The fleet's VM bootstrap still builds via build-image.sh and tags keel:latest
+    # first, so plain `compose up` there finds the image and never touches this block (the :-
+    # defaults keep unset-variable warnings out of its logs).
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      args:
+        BASE_IMAGE: ${UBUNTU_BASE_IMAGE:-}@${UBUNTU_BASE_DIGEST:-}
+        NODE_VERSION: ${NODE_VERSION:-}
+        NODE_SHA256_X64: ${NODE_SHA256_LINUX_X64:-}
+        NODE_SHA256_ARM64: ${NODE_SHA256_LINUX_ARM64:-}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
+        TARGETARCH: ${TARGETARCH:-amd64}
     container_name: keel-webchat
     env_file: [keel.env]
     environment:

@@ -22,24 +22,28 @@ The fleet runs behind Cloudflare Access — auth is enforced at the edge, and th
 app rejects anything that didn't come through it. That is the right posture for
 a tunnel and a locked door for a laptop, so there is an explicit local mode:
 
+Prerequisite: Docker Desktop running (Windows/macOS) or the docker engine
+(Linux). The commands below are identical on all three — PowerShell included.
+
 ```bash
 git clone https://github.com/marcusmayo/keel.git
-cd keel
+cd keel/infra/docker
 
-# 1. build the image (the build FAILS if any vendored module drifts from its manifest)
-bash infra/scripts/build-image.sh
-
-# 2. configure: two keys, one loudly-labelled line
-cd infra/docker
+# 1. configure: two keys, one loudly-labelled line
 cp keel.env.example keel.env
 #   set  ANTHROPIC_API_KEY=sk-ant-...      (direct mode; simplest)
 #   set  TOTP_SECRET=scratch               (vestigial; any value)
 #   uncomment  AUTH_MODE=local             (local development ONLY)
 
-# 3. run
-docker compose up -d webchat
+# 2. build + run in one command
+docker compose --env-file ../versions.lock up -d --build webchat
 # open http://127.0.0.1:8443
 ```
+
+The `--env-file` feeds the repo's pinned versions into the image build, and
+the build still FAILS if any vendored module drifts from its manifest — same
+guarantee, no bash, no sudo. (The fleet's own VMs build via
+`infra/scripts/build-image.sh` instead; this path is for laptops.)
 
 `AUTH_MODE=local` disables edge authentication entirely. It is default-off,
 only the literal word `local` activates it, it is read from the environment at

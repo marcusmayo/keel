@@ -66,8 +66,14 @@ fi
 
 mkdir -p "$STAGE"
 # The staging dir must stay readable AND writable by the container user, which owns the volume's
-# contents (uid 10001). A root-owned file dropped in would list fine and then fail to move.
+# contents (uid 10001). A root-owned file dropped in would list fine and then fail to move --
+# and the DIR itself has the same rule: Process removes a staged file from inside the container,
+# and unlink needs write on the parent, so a root-owned staging dir makes every Process fail
+# with EACCES while listing works perfectly. A clean restore surfaced exactly that: tar re-
+# created staging root-owned, and only the volume ROOT gets the ownership repair. Re-asserting
+# it here makes every sweep self-healing, whatever recreated the dir.
 OWN="$(stat -c '%u:%g' "$STATE_VOL")"
+chown "$OWN" "$STAGE"
 staged=0; skipped=0
 while IFS= read -r blob; do
   [ -n "$blob" ] || continue

@@ -18,6 +18,6 @@ if ( cd "$DIR" && sha256sum -c "$MF" ); then
   echo "verify-core OK: vendored core matches fleet-core manifest"
 else
   rm -f "$MF"
-  echo "VERIFY FAIL: vendored core drifted from manifest (edit shared code in agent-fleet-iac/core/, then re-sync)"
+  echo "VERIFY FAIL: vendored core drifted from manifest (edit shared code in fleet/core/, then re-sync)"
   exit 1
 fi

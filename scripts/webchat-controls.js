@@ -223,6 +223,140 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', accentFollow);
   else accentFollow();
 
+
+  // ---- background lane --------------------------------------------------------------------
+  // THIS agent's own look, set from THIS agent's page: aegis does not reach in here, and this
+  // does not reach out. Two optional slots -- `page` fills the window, `inlay` is what the
+  // answer boxes ghost; with only `page` uploaded the boxes ghost that. State lives in the
+  // agent's state VOLUME (server side, core/webchat-ops.js), so it outlives a container
+  // recreate, an image rebuild and a deallocate/start. Sibling of the Aegis implementation in
+  // aegis.js -- keep the two in step.
+  var BG = null;
+
+  function bgApply(st) {
+    if (!st || !st.slots) return;
+    BG = st;
+    var d = document.documentElement, b = document.body;
+    var pg = st.slots.page, il = st.slots.inlay;
+    if (!pg.present) {
+      b.classList.remove('hasbg', 'lightbg');
+      d.style.removeProperty('--bg-img');
+      d.style.removeProperty('--inlay-img');
+      d.style.setProperty('--inlay-op', 0);
+    } else {
+      b.classList.add('hasbg');
+      var t = Date.now(); // one fixed filename per slot, so the URL must bust its own cache
+      d.style.setProperty('--bg-img', 'url("/ui/background/page/file?t=' + t + '")');
+      d.style.setProperty('--bg-size', pg.fit === 'fill' ? '100% 100%' : pg.fit);
+      d.style.setProperty('--bg-pos', pg.posX + '% ' + pg.posY + '%');
+      var src = il.present ? 'inlay' : 'page';
+      var cfg = il.present ? il : { opacity: 0.14, rotate: -6, scale: 1.4 };
+      d.style.setProperty('--inlay-img', 'url("/ui/background/' + src + '/file?t=' + t + '")');
+      d.style.setProperty('--inlay-op', cfg.opacity);
+      d.style.setProperty('--inlay-rot', cfg.rotate + 'deg');
+      d.style.setProperty('--inlay-scale', cfg.scale);
+      // Contrast is decided by measurement, not hope: the mean luminance of whatever the boxes
+      // are ghosting picks the text colour, and the box keeps enough of its own body that text
+      // never sits directly on the image.
+      var lum = il.present ? il.lum : pg.lum;
+      var light = (typeof lum === 'number') && lum > 0.6;
+      b.classList.toggle('lightbg', light);
+      d.style.setProperty('--box-a', light ? 0.86 : 0.78);
+    }
+    var set = function (id, v) { var e = document.getElementById(id); if (e) e.value = v; };
+    set('bgFit', pg.fit); set('bgPosX', pg.posX); set('bgPosY', pg.posY);
+    set('bgOp', Math.round((il.present ? il.opacity : 0.14) * 100));
+    set('bgRot', il.present ? il.rotate : -6);
+    set('bgScale', Math.round((il.present ? il.scale : 1.4) * 100));
+    // What you read BEFORE the picker opens: the types this takes, the cap, and the ratio THIS
+    // window wants -- measured live, because the server cannot know it and guessing would lie.
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var txt = 'PNG, JPEG or WebP &middot; up to ' + Math.round(st.maxBytes / 1048576) + ' MB &middot; this window is <b>'
+            + vw + '&times;' + vh + '</b> (' + (vw / vh).toFixed(2) + ':1) &mdash; an image near that ratio fills it without cropping.';
+    if (pg.present && pg.w && pg.h) {
+      var diff = Math.abs(pg.w / pg.h - vw / vh) / (vw / vh);
+      txt += '<br>current: <b>' + pg.w + '&times;' + pg.h + '</b> (' + (pg.w / pg.h).toFixed(2) + ':1)'
+          + (diff > 0.08
+              ? ' &mdash; ratios differ, so <b>cover</b> crops; move the focal point, or use <b>contain</b> to see all of it.'
+              : ' &mdash; close enough to this window that cover barely crops.');
+    }
+    var h = document.getElementById('bgHint'); if (h) h.innerHTML = txt;
+  }
+
+  function bgLoad() { fetch('/ui/background').then(function (r) { return r.json(); }).then(bgApply).catch(function () {}); }
+  function bgSet(slot, patch) {
+    fetch('/ui/background/' + slot + '/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
+      .then(function (r) { return r.json(); }).then(bgApply).catch(function () {});
+  }
+  function bgReset(slot) {
+    fetch('/ui/background/' + slot, { method: 'DELETE' })
+      .then(function (r) { return r.json(); }).then(bgApply).catch(function () {});
+  }
+  // Mean luminance and true pixel size, measured in the browser on a canvas and sent as query
+  // params. Recorded server-side as client-measured: it drives the contrast flip and the hint,
+  // nothing else, and decoding images in the agent would buy a dependency for no gain.
+  function bgMeasure(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var n = 64, c = document.createElement('canvas'); c.width = n; c.height = n;
+        var g = c.getContext('2d'); g.drawImage(img, 0, 0, n, n);
+        var lum = null;
+        try {
+          var px = g.getImageData(0, 0, n, n).data, sum = 0;
+          for (var i = 0; i < px.length; i += 4) sum += (0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]) / 255;
+          lum = sum / (px.length / 4);
+        } catch (e) { /* never block an upload on the measurement */ }
+        URL.revokeObjectURL(url);
+        resolve({ lum: lum, w: img.naturalWidth, h: img.naturalHeight });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve({ lum: null, w: null, h: null }); };
+      img.src = url;
+    });
+  }
+  function bgUpload(slot, file) {
+    if (!file) return;
+    var hint = document.getElementById('bgHint');
+    bgMeasure(file).then(function (m) {
+      var q = [];
+      if (m.lum !== null) q.push('lum=' + m.lum.toFixed(4));
+      if (m.w && m.h) { q.push('aspect=' + (m.w / m.h).toFixed(4)); q.push('w=' + m.w); q.push('h=' + m.h); }
+      return fetch('/ui/background/' + slot + (q.length ? '?' + q.join('&') : ''), {
+        method: 'POST', headers: { 'Content-Type': file.type }, body: file
+      });
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || j.ok === false) {
+          var msg = (j && j.error) || ('upload failed: HTTP ' + r.status);
+          if (hint) hint.innerHTML = '<b style="color:#e0a0a0">' + msg + '</b>'; else notify(msg, 'err');
+          return;
+        }
+        bgApply(j);
+      });
+    }).catch(function (e) {
+      if (hint) hint.innerHTML = '<b style="color:#e0a0a0">upload failed: ' + e.message + '</b>';
+    });
+  }
+  function toggleBackground() {
+    var p = document.getElementById('bgPanel'); if (!p) return;
+    p.classList.toggle('on');
+    if (p.classList.contains('on')) bgLoad();
+  }
+  function bgWire() {
+    var a = document.getElementById('bgPageFile'), b2 = document.getElementById('bgInlayFile');
+    if (a) a.addEventListener('change', function () { bgUpload('page', this.files[0]); });
+    if (b2) b2.addEventListener('change', function () { bgUpload('inlay', this.files[0]); });
+    bgLoad();
+    var t = null;
+    window.addEventListener('resize', function () { clearTimeout(t); t = setTimeout(function () { if (BG) bgApply(BG); }, 250); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bgWire);
+  else bgWire();
+
+  window.toggleBackground = toggleBackground;
+  window.bgSet = bgSet;
+  window.bgReset = bgReset;
+
   window.applyAccentVars = applyAccentVars;
   window.toggleWeb = toggleWeb;
   window.newConversation = newConversation;

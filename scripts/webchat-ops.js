@@ -285,6 +285,183 @@ function mountChatOps(app, opts) {
     audit({ event: 'file-process', name, dest: STAGE_DEST_REL });
     res.json({ ok: true, name, message: name + ' -> ' + STAGE_DEST_REL + ' — the profile pipeline takes it from here' });
   });
+
+  // ---- background / inlay -----------------------------------------------------------------
+  // Two image slots per agent, both OPTIONAL and both pure preference: `page` fills the window,
+  // `inlay` is what the answer boxes ghost. Upload only `page` and the boxes ghost it; upload
+  // `inlay` too and it takes over. Files live in the STATE VOLUME (state/ui/), never in the
+  // image, so a rebuild, a recreate, and a deallocate/start all keep them -- and changing one
+  // later is a file drop rather than a build. Settings ride ui.json beside the accent, which is
+  // why /color had to start merging instead of replacing.
+  const UI_DIR = path.join(stateDir, 'ui');
+  const SLOTS = { page: 1, inlay: 1 };
+  // Magic bytes, not the extension and not the client's Content-Type: both are attacker-chosen.
+  // SVG is refused outright -- it is a script carrier, and this is the one place we take a file.
+  const MAGIC = [
+    { ext: 'png',  mime: 'image/png',  test: (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+    { ext: 'jpg',  mime: 'image/jpeg', test: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+    { ext: 'webp', mime: 'image/webp', test: (b) => b.length > 12 && b.slice(0, 4).toString('ascii') === 'RIFF' && b.slice(8, 12).toString('ascii') === 'WEBP' },
+  ];
+  // 12 MB, not 8: real operator scenes run to 7.8 MB, and a cap that rejects the files in
+  // actual use is a cap set by guesswork rather than by measurement.
+  const MAX_BYTES = 12 * 1024 * 1024;
+
+  function readUi() {
+    try { const j = JSON.parse(fs2.readFileSync(path.join(stateDir, 'ui.json'), 'utf8')); return (j && typeof j === 'object') ? j : {}; }
+    catch { return {}; }
+  }
+  function writeUi(patch) {
+    const ui = readUi();
+    for (const k of Object.keys(patch)) {
+      if (patch[k] === null) delete ui[k]; else ui[k] = patch[k];
+    }
+    fs2.mkdirSync(stateDir, { recursive: true });
+    fs2.writeFileSync(path.join(stateDir, 'ui.json'), JSON.stringify(ui) + '\n');
+    return ui;
+  }
+  function slotFile(slot) {
+    for (const m of MAGIC) {
+      const f = path.join(UI_DIR, slot + '.' + m.ext);
+      if (fs2.existsSync(f)) return { file: f, ext: m.ext, mime: m.mime };
+    }
+    return null;
+  }
+  function clampNum(v, lo, hi, dflt) {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+  }
+  // What the client is told BEFORE it opens a file picker: the accepted types and the aspect
+  // ratio it is about to fill. The ratio is the viewport's, sent by the client on the way in --
+  // the server cannot know it, and pretending otherwise would be theatre.
+  function bgState() {
+    const ui = readUi();
+    const out = { ok: true, accept: MAGIC.map((m) => m.mime), maxBytes: MAX_BYTES, slots: {} };
+    for (const slot of Object.keys(SLOTS)) {
+      const f = slotFile(slot);
+      const s = (ui.ui_background && ui.ui_background[slot]) || {};
+      out.slots[slot] = {
+        present: !!f,
+        ext: f ? f.ext : null,
+        fit: s.fit || 'cover',
+        posX: clampNum(s.posX, 0, 100, 50),
+        posY: clampNum(s.posY, 0, 100, 50),
+        opacity: clampNum(s.opacity, 0, 1, slot === 'inlay' ? 0.14 : 1),
+        rotate: clampNum(s.rotate, -180, 180, slot === 'inlay' ? -6 : 0),
+        scale: clampNum(s.scale, 0.2, 3, slot === 'inlay' ? 1.4 : 1),
+        // client-measured mean luminance (0..1). Labelled as such: it is computed in the browser
+        // on a canvas and is cosmetic -- decoding images server-side would add a dependency to
+        // both agents for no governance gain.
+        lum: (typeof s.lum === 'number') ? s.lum : null,
+        lumSource: (typeof s.lum === 'number') ? 'client-measured' : null,
+        aspect: (typeof s.aspect === 'number') ? s.aspect : null,
+      };
+    }
+    return out;
+  }
+
+  app.get('/ui/background', requireAuth, (req, res) => res.json(bgState()));
+
+  app.get('/ui/background/:slot/file', requireAuth, (req, res) => {
+    const slot = String(req.params.slot || '');
+    if (!SLOTS[slot]) return res.status(400).end();
+    const f = slotFile(slot);
+    if (!f) return res.status(404).end();
+    res.type(f.mime);
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(f.file, (err) => { if (err && !res.headersSent) res.status(404).end(); });
+  });
+
+  // Raw bytes, not multipart: express.raw is built in on 4 and 5, castor's webchat has no
+  // multer, and aegis is bare http -- one shape that works on all three without a new dep.
+  // Collect the body by hand rather than express.raw(). This module is VENDORED to <agent>/scripts/
+  // while express lives in <agent>/webchat/node_modules, so require('express') from here does not
+  // resolve -- the guarded require a few lines above has the same problem and silently degrades.
+  // Reading the stream depends on nothing, works identically on express 4, express 5 and bare
+  // http, and enforces the cap while the bytes arrive instead of after.
+  function rawImage(req, res, next) {
+    if (Buffer.isBuffer(req.body) && req.body.length) return next();
+    const chunks = []; let n = 0; let done = false;
+    req.on('data', (c) => {
+      if (done) return;
+      n += c.length;
+      // Answer BEFORE closing: destroying the socket first races the 413 and the caller sees a
+      // connection reset with no reason attached.
+      if (n > MAX_BYTES) {
+        done = true;
+        res.set('Connection', 'close');
+        res.status(413).json({ ok: false, error: 'too large (max ' + MAX_BYTES + ' bytes)' });
+        res.on('finish', () => { try { req.destroy(); } catch { /* already gone */ } });
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => { if (done) return; done = true; req.body = Buffer.concat(chunks); next(); });
+    req.on('error', () => { if (done) return; done = true; res.status(400).json({ ok: false, error: 'read failed' }); });
+  }
+
+  app.post('/ui/background/:slot',
+    requireAuth,
+    rawImage,
+    (req, res) => {
+      const slot = String(req.params.slot || '');
+      if (!SLOTS[slot]) return res.status(400).json({ ok: false, error: 'unknown slot' });
+      const buf = req.body;
+      if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ ok: false, error: 'empty body — POST the raw image bytes with its Content-Type' });
+      const kind = MAGIC.find((m) => m.test(buf));
+      if (!kind) return res.status(415).json({ ok: false, error: 'not a PNG, JPEG or WebP (checked by content, not by name)' });
+      try {
+        fs2.mkdirSync(UI_DIR, { recursive: true });
+        // one fixed name per slot: no traversal surface, no unbounded growth
+        for (const m of MAGIC) { try { fs2.unlinkSync(path.join(UI_DIR, slot + '.' + m.ext)); } catch { /* absent */ } }
+        fs2.writeFileSync(path.join(UI_DIR, slot + '.' + kind.ext), buf, { mode: 0o644 });
+      } catch (e) {
+        return res.status(500).json({ ok: false, error: 'write failed: ' + e.message });
+      }
+      const q = req.query || {};
+      const cur = readUi().ui_background || {};
+      cur[slot] = Object.assign({}, cur[slot], {
+        lum: (q.lum !== undefined) ? clampNum(q.lum, 0, 1, null) : (cur[slot] || {}).lum,
+        aspect: (q.aspect !== undefined) ? clampNum(q.aspect, 0.05, 20, null) : (cur[slot] || {}).aspect,
+      });
+      writeUi({ ui_background: cur });
+      audit({ event: 'ui-background-set', slot, bytes: buf.length, ext: kind.ext });
+      res.json(bgState());
+    });
+
+  app.post('/ui/background/:slot/settings', requireAuth, (req, res) => {
+    const slot = String(req.params.slot || '');
+    if (!SLOTS[slot]) return res.status(400).json({ ok: false, error: 'unknown slot' });
+    const b = req.body || {};
+    const cur = readUi().ui_background || {};
+    const s = Object.assign({}, cur[slot]);
+    if (b.fit !== undefined) s.fit = (['cover', 'contain', 'fill'].indexOf(String(b.fit)) >= 0) ? String(b.fit) : 'cover';
+    if (b.posX !== undefined) s.posX = clampNum(b.posX, 0, 100, 50);
+    if (b.posY !== undefined) s.posY = clampNum(b.posY, 0, 100, 50);
+    if (b.opacity !== undefined) s.opacity = clampNum(b.opacity, 0, 1, 0.14);
+    if (b.rotate !== undefined) s.rotate = clampNum(b.rotate, -180, 180, 0);
+    if (b.scale !== undefined) s.scale = clampNum(b.scale, 0.2, 3, 1);
+    if (b.lum !== undefined) s.lum = clampNum(b.lum, 0, 1, null);
+    cur[slot] = s;
+    writeUi({ ui_background: cur });
+    res.json(bgState());
+  });
+
+  // Reset. Not attested: it destroys a preference, and gating cosmetics cheapens the gate.
+  // Clearing `page` clears `inlay` too -- an inlay with nothing behind it is not a state worth
+  // having. Clearing `inlay` alone returns the boxes to ghosting the page image.
+  app.delete('/ui/background/:slot', requireAuth, (req, res) => {
+    const slot = String(req.params.slot || '');
+    if (!SLOTS[slot]) return res.status(400).json({ ok: false, error: 'unknown slot' });
+    const kill = (slot === 'page') ? ['page', 'inlay'] : ['inlay'];
+    const cur = readUi().ui_background || {};
+    for (const s of kill) {
+      for (const m of MAGIC) { try { fs2.unlinkSync(path.join(UI_DIR, s + '.' + m.ext)); } catch { /* absent */ } }
+      delete cur[s];
+    }
+    writeUi({ ui_background: Object.keys(cur).length ? cur : null });
+    audit({ event: 'ui-background-reset', slots: kill.join(',') });
+    res.json(bgState());
+  });
 }
 
 module.exports = { mountChatOps, modelLabel, MODEL_LABELS };

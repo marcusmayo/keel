@@ -47,6 +47,39 @@
   #attach { background:#262626; color:#bbb; border:0; border-radius:8px; padding:0 16px; font-size:13px; cursor:pointer; }
   #send { background:var(--accent); color:var(--accent-text); border:0; border-radius:8px; padding:0 20px; font-size:14px; cursor:pointer; }
   #send:disabled { background:#333; color:#777; cursor:default; }
+
+  /* ---- background lane (fleet-core client: scripts/webchat-controls.js) -------------------
+     Every default below is the pre-background look, so an agent with no image uploaded
+     renders exactly as it did before. body.hasbg is added only once a page image exists. */
+  :root{--bg-img:none;--bg-size:cover;--bg-pos:50% 50%;
+        --inlay-img:none;--inlay-op:0;--inlay-rot:-6deg;--inlay-scale:1.4;--box-a:0.78}
+  body.hasbg{background-image:var(--bg-img);background-size:var(--bg-size);
+    background-position:var(--bg-pos);background-repeat:no-repeat;background-attachment:fixed}
+  /* The answer boxes ghost the inlay through a pseudo-element rather than a second background
+     layer, because a background layer cannot be rotated; inset:-30% keeps the corners covered
+     once it is. Children are lifted so text never sits under the ghost. */
+  body.hasbg .msg{position:relative;overflow:hidden;background-color:rgba(30,30,30,var(--box-a))}
+  body.hasbg .msg::before{content:'';position:absolute;inset:-30%;background-image:var(--inlay-img);
+    background-size:cover;background-position:center;opacity:var(--inlay-op);
+    transform:rotate(var(--inlay-rot)) scale(var(--inlay-scale));pointer-events:none}
+  body.hasbg .msg>*{position:relative;z-index:1}
+  /* Light scene -> dark box text. Measured in the browser, not guessed. */
+  body.hasbg.lightbg .msg{color:#0a0a0a;background-color:rgba(245,245,245,var(--box-a))}
+  body.hasbg.lightbg .msg a{color:#123}
+  /* the control */
+  #bgPanel{display:none;margin:0;padding:12px 16px;background:#141414;
+    border-bottom:1px solid #262626;font-size:12px}
+  #bgPanel.on{display:block}
+  #bgPanel .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
+  #bgPanel label{color:#888;min-width:96px}
+  #bgPanel .hint{color:#888;font-size:11px;line-height:1.6}
+  #bgPanel input[type=range]{width:130px}
+  #bgPanel input[type=file]{color:#bbb;background:#0f0f0f;border:1px solid #2a2a2a;
+    border-radius:5px;padding:2px;font:inherit;font-size:11px}
+  #bgPanel select{background:#0f0f0f;border:1px solid #2a2a2a;color:#ddd;border-radius:5px;
+    padding:3px 8px;font:inherit;font-size:12px}
+  #bgPanel button.rst{background:#2a1414;border:1px solid #5a2020;color:#e0a0a0;
+    border-radius:5px;padding:3px 10px;cursor:pointer;font:inherit;font-size:11px}
 </style>
 </head>
 <body>
@@ -58,10 +91,36 @@
       <button onclick="exportMultisource()" style="margin-right:8px">Export multi-source</button>
       <button id="newConv" onclick="newConversation()" style="margin-right:8px" title="Start a fresh conversation (shared with Aegis - both route sessions reset)">↻ new</button>
       <button id="webToggle" onclick="toggleWeb()" style="margin-right:8px">web: …</button>
+      <button onclick="toggleBackground()" style="margin-right:8px" title="Set this agent's background image (this agent only)">background</button>
       <span class="swatch" id="accentSwatch" onclick="toggleSwatches()" title="accent color (click to change)" style="margin-right:10px;vertical-align:middle"></span>
       <button onclick="logout()">Log out</button>
     </span>
   </header>
+<div id="bgPanel">
+  <div class="hint" id="bgHint">&hellip;</div>
+  <div class="row"><label>page image</label>
+    <input type="file" id="bgPageFile" accept="image/png,image/jpeg,image/webp">
+    <button class="rst" onclick="bgReset('page')">reset all</button></div>
+  <div class="row"><label>fit</label>
+    <select id="bgFit" onchange="bgSet('page',{fit:this.value})">
+      <option value="cover">cover &mdash; fills, crops the overflow</option>
+      <option value="contain">contain &mdash; whole image, letterboxed</option>
+      <option value="fill">fill &mdash; stretches to fit</option>
+    </select></div>
+  <div class="row"><label>focal point</label>
+    x <input type="range" id="bgPosX" min="0" max="100" oninput="bgSet('page',{posX:+this.value})">
+    y <input type="range" id="bgPosY" min="0" max="100" oninput="bgSet('page',{posY:+this.value})">
+    <span class="hint">only bites on <b>cover</b>, which is the one that crops</span></div>
+  <div class="row"><label>inlay image</label>
+    <input type="file" id="bgInlayFile" accept="image/png,image/jpeg,image/webp">
+    <button class="rst" onclick="bgReset('inlay')">reset inlay</button>
+    <span class="hint">optional &mdash; with none, the answer boxes ghost the page image</span></div>
+  <div class="row"><label>inlay look</label>
+    opacity <input type="range" id="bgOp" min="0" max="60" oninput="bgSet('inlay',{opacity:this.value/100})">
+    angle <input type="range" id="bgRot" min="-30" max="30" oninput="bgSet('inlay',{rotate:+this.value})">
+    scale <input type="range" id="bgScale" min="60" max="260" oninput="bgSet('inlay',{scale:this.value/100})"></div>
+</div>
+
   <div id="swatches"></div>
   <div id="weeklyBanner" style="display:none; padding:10px 14px; margin:0; font-size:14px; border-bottom:1px solid #2a2a2a;">
     <span id="weeklyBannerText"></span>

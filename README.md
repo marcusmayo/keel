@@ -37,12 +37,14 @@ docker compose --env-file ../versions.lock --profile gateway up -d --build
 # open http://127.0.0.1:8443 and send a message
 ```
 
-Three lines in `keel.env` do the work, and only two of them are keys:
+What `keel.env` needs — the example ships with all of it, two blanks to fill
+and one line to uncomment:
 
 | variable | what it is |
 | --- | --- |
 | `OPENROUTER_API_KEY` | your `sk-or-` key. The gateway holds it and spends it; the agent container never sees it. |
 | `ANTHROPIC_API_KEY` | what the Claude CLI presents as its own credential. Through the gateway that credential is ignored, so paste the **same** `sk-or-` key here. Paste a real `sk-ant-` key instead if you also want web research. |
+| `ANTHROPIC_BASE_URL` | already set to `http://gateway:4000` in the example. Comment it out only if you are running without the gateway profile. |
 | `AUTH_MODE=local` | uncomment it, or the page answers 403. Explained at the end of this section. |
 
 The `cp` of the gateway table is not decoration. The gateway reads

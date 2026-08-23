@@ -1,6 +1,7 @@
 # Keel self-contained deployment. Requires keel.env alongside (gitignored):
-#   TOTP_SECRET=...          # real secret on real deploys; scratch for smoke
-#   ANTHROPIC_API_KEY=...    # omit if only smoke-testing
+#   OPENROUTER_API_KEY=...   # the gateway spends this
+#   ANTHROPIC_API_KEY=...    # what the CLI presents; the keyless gateway ignores it
+#   ANTHROPIC_BASE_URL=...   # http://gateway:4000 -- lives in keel.env, NOT here
 name: keel
 services:
   webchat:
@@ -33,7 +34,6 @@ services:
       NODE_PATH: /app/webchat/node_modules   # scripts/ modules (model-routing.js) resolve js-yaml from webchat deps
       HOME: /home/keel          # claude CLI config dir
       CLAUDE_CONFIG_DIR: /home/keel/.claude   # relocate .claude.json INTO the persistent volume (kills the recreate-warning)
-      ANTHROPIC_BASE_URL: http://gateway:4000   # text via LiteLLM->OpenRouter (vision stays direct)
       ANTHROPIC_SMALL_FAST_MODEL: claude-haiku-4.5   # gateway alias name; unpinned, the CLI sends its dated default and 404s the WebSearch aux-model call
       ANTHROPIC_MODEL: deepseek-v4-pro   # routine-tier default (system/model-routing.yaml); pins the CLI's MAIN model the way SMALL_FAST pins the aux -- bare `claude -p` from tools otherwise sends a dated default the gateway 400s
       WEB_DIRECT_MODEL: claude-sonnet-4-6   # web-ON turns bypass the gateway -> api.anthropic.com for REAL server-side web_search (uses the real ANTHROPIC_API_KEY)

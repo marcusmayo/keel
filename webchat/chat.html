@@ -80,6 +80,23 @@
     padding:3px 8px;font:inherit;font-size:12px}
   #bgPanel button.rst{background:#2a1414;border:1px solid #5a2020;color:#e0a0a0;
     border-radius:5px;padding:3px 10px;cursor:pointer;font:inherit;font-size:11px}
+  /* ---- chrome over the image -------------------------------------------------------------
+     Without this, keel's header/skills/composer sit on the page as opaque slabs and cut the
+     scene in half, while castor's are fully transparent and drop small text straight onto a
+     busy map. Both get the same translucent band. The blur is load-bearing: alpha alone does
+     not make 12px type legible over a photograph. Scoped to body.hasbg, so an agent with no
+     image uploaded is untouched. */
+  body.hasbg header,body.hasbg .cheatbar,body.hasbg footer{
+    background-color:rgba(18,18,18,var(--chrome-a,.64));
+    -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
+  body.hasbg textarea,body.hasbg #input{background-color:rgba(10,10,10,.74)}
+  /* Light scene: the band flips with the answer boxes, or dark chrome floats on a pale map. */
+  body.hasbg.lightbg header,body.hasbg.lightbg .cheatbar,body.hasbg footer{
+    background-color:rgba(243,243,243,var(--chrome-a,.68));color:#0a0a0a}
+  body.hasbg.lightbg textarea,body.hasbg.lightbg #input{
+    background-color:rgba(252,252,252,.82);color:#0a0a0a;border-color:#c9c9c9}
+  body.hasbg.lightbg header button,body.hasbg.lightbg footer button{
+    background-color:rgba(255,255,255,.72);color:#1a1a1a;border:1px solid #c9c9c9}
 </style>
 </head>
 <body>

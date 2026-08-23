@@ -103,6 +103,16 @@
      regions the mean got wrong. */
   body.hasbg.hasinlay .msg{text-shadow:0 1px 2px rgba(0,0,0,.62)}
   body.hasbg.hasinlay.lightbg .msg{text-shadow:0 1px 2px rgba(255,255,255,.75)}
+  /* ---- dim labels over a photograph --------------------------------------------------------
+     The category labels, the model label and the queue counters were tuned for a flat #0d0d0d
+     page; over a scene they disappear. Two moves, because half of them are not ours to restyle:
+     raise the colours we own, and put a text-shadow on the whole band. The shadow is inherited
+     and an inline `color` cannot cancel it, so the inline-styled counters and group headings in
+     castor's pending list get carried too -- no !important, no specificity fight. */
+  body.hasbg header,body.hasbg .cheatbar,body.hasbg footer{text-shadow:0 1px 2px rgba(0,0,0,.78)}
+  body.hasbg .glabel{color:#c0c0c0}
+  body.hasbg .modelbar{color:#c8c8c8}
+  body.hasbg .cheatlist span,body.hasbg .cheatgroup span{color:#cfcfcf}
 </style>
 </head>
 <body>
@@ -137,7 +147,7 @@
   <div class="row"><label>inlay image</label>
     <input type="file" id="bgInlayFile" accept="image/png,image/jpeg,image/webp">
     <button class="rst" onclick="bgReset('inlay')">reset inlay</button>
-    <span class="hint">optional &mdash; with none, the answer boxes ghost the page image</span></div>
+    <span class="hint">optional &mdash; a second image ghosted behind the answer text; with none, nothing is</span></div>
   <div class="row"><label>inlay look</label>
     opacity <input type="range" id="bgOp" min="0" max="60" oninput="bgSet('inlay',{opacity:this.value/100})">
     angle <input type="range" id="bgRot" min="-30" max="30" oninput="bgSet('inlay',{rotate:+this.value})">

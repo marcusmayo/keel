@@ -86,8 +86,24 @@
   // plus a request lane. Clicking never mutates policy -- it records a request
   // the operator completes as the attested ceremony in Aegis.
   var PROT={protected:false,requested:null};
-  function renderProt(){var b=document.getElementById('protBadge');if(!b)return;var t=PROT.protected?'\u{1F6E1}':'\u25CB';if(PROT.requested)t+='\u00B7';b.textContent=t;b.style.color=PROT.protected?'#22c55e':'#777';b.title=(PROT.protected?'Decommission is policy-refused for this agent.':'No decommission guard on this agent.')+' Click to request a change; the attested ceremony completes in Aegis.';}
-  function ensureProtBadge(){if(document.getElementById('protBadge'))return;var wb=document.getElementById('webToggle');if(!wb||!wb.parentNode)return;var b=document.createElement('button');b.id='protBadge';b.style.cssText='margin-right:8px;background:none;border:1px solid #333;border-radius:6px;padding:4px 8px;cursor:pointer;font:inherit;color:#aaa';b.onclick=toggleProt;wb.parentNode.insertBefore(b,wb);}
+  // The shield is a FILLED pill, not a coloured glyph. Two reasons it had to change. U+1F6E1
+  // defaults to EMOJI presentation, so the browser drew its own colour glyph and ignored the
+  // #22c55e it was told to be; U+FE0E forces text presentation, which is colourable. And a thin
+  // glyph on a page that now carries a photograph reads as decoration -- a solid green pill when
+  // guarded, a dim outlined one when not, are both legible over any scene.
+  function renderProt(){
+    var b=document.getElementById('protBadge'); if(!b)return;
+    var on=!!PROT.protected;
+    b.textContent='\u{1F6E1}\uFE0E'+(PROT.requested?'\u00B7':'');
+    b.style.background  = on ? '#22c55e' : 'rgba(0,0,0,.34)';
+    b.style.color       = on ? '#06280f' : '#9a9a9a';
+    b.style.borderColor = on ? '#16a34a' : '#4a4a4a';
+    b.style.fontWeight  = on ? '700' : '400';
+    b.style.boxShadow   = on ? '0 0 0 1px rgba(34,197,94,.35)' : 'none';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title=(on?'Decommission is policy-refused for this agent.':'No decommission guard on this agent.')+(PROT.requested?' A change is requested and pending.':'')+' Click to request a change; the attested ceremony completes in Aegis.';
+  }
+  function ensureProtBadge(){if(document.getElementById('protBadge'))return;var wb=document.getElementById('webToggle');if(!wb||!wb.parentNode)return;var b=document.createElement('button');b.id='protBadge';b.style.cssText='margin-right:8px;background:rgba(0,0,0,.34);border:1px solid #4a4a4a;border-radius:999px;padding:4px 10px;cursor:pointer;font:inherit;line-height:1;color:#9a9a9a';b.onclick=toggleProt;wb.parentNode.insertBefore(b,wb);}
   async function syncProt(){try{var r=await(await fetch('/protection')).json();if(r&&r.ok){PROT={protected:!!r.protected,requested:r.requested||null};renderProt();}}catch(e){}}
   async function toggleProt(){var want=PROT.protected?'unprotect':'protect';try{var r=await(await fetch('/protection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request:want})})).json();if(r&&r.ok){PROT={protected:!!r.protected,requested:r.requested||null};renderProt();notify(r.message||('Protection '+want+' requested \u2014 complete the attested ceremony in Aegis.'),'sys');}else{notify('Protection request failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){notify('Protection request failed: '+e,'err');}}
 

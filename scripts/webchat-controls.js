@@ -239,7 +239,7 @@
     var d = document.documentElement, b = document.body;
     var pg = st.slots.page, il = st.slots.inlay;
     if (!pg.present) {
-      b.classList.remove('hasbg', 'lightbg');
+      b.classList.remove('hasbg', 'lightbg', 'hasinlay');
       d.style.removeProperty('--bg-img');
       d.style.removeProperty('--inlay-img');
       d.style.setProperty('--inlay-op', 0);
@@ -249,21 +249,33 @@
       d.style.setProperty('--bg-img', 'url("/ui/background/page/file?t=' + t + '")');
       d.style.setProperty('--bg-size', pg.fit === 'fill' ? '100% 100%' : pg.fit);
       d.style.setProperty('--bg-pos', pg.posX + '% ' + pg.posY + '%');
-      var src = il.present ? 'inlay' : 'page';
-      var cfg = il.present ? il : { opacity: 0.14, rotate: -6, scale: 1.4 };
-      d.style.setProperty('--inlay-img', 'url("/ui/background/' + src + '/file?t=' + t + '")');
-      d.style.setProperty('--inlay-op', cfg.opacity);
-      d.style.setProperty('--inlay-rot', cfg.rotate + 'deg');
-      d.style.setProperty('--inlay-scale', cfg.scale);
-      // Contrast is decided by measurement, not hope: the mean luminance of whatever the boxes
-      // are ghosting picks the text colour, and the box keeps enough of its own body that text
-      // never sits directly on the image.
-      var lum = il.present ? il.lum : pg.lum;
+      // Ghosting is OPT-IN. With no inlay uploaded the boxes are a plain translucent panel over
+      // the page image -- a second, rotated copy of the same scene behind the text bought noise,
+      // not depth. Upload an inlay and it paints; otherwise nothing does.
+      var hasInlay = !!il.present;
+      b.classList.toggle('hasinlay', hasInlay);
+      if (hasInlay) {
+        d.style.setProperty('--inlay-img', 'url("/ui/background/inlay/file?t=' + t + '")');
+        d.style.setProperty('--inlay-op', il.opacity);
+        d.style.setProperty('--inlay-rot', il.rotate + 'deg');
+        d.style.setProperty('--inlay-scale', il.scale);
+      } else {
+        d.style.setProperty('--inlay-img', 'none');
+        d.style.setProperty('--inlay-op', 0);
+      }
+      // Contrast is decided by measurement: the mean luminance of whatever sits behind the text
+      // picks its colour. A photographic inlay has bright and dark regions that no single mean
+      // describes, so the box also carries MORE of its own body when one is present.
+      var lum = hasInlay ? il.lum : pg.lum;
       var light = (typeof lum === 'number') && lum > 0.6;
       b.classList.toggle('lightbg', light);
-      d.style.setProperty('--box-a', light ? 0.86 : 0.78);
+      d.style.setProperty('--box-a', hasInlay ? (light ? 0.90 : 0.86) : (light ? 0.86 : 0.78));
     }
     var set = function (id, v) { var e = document.getElementById(id); if (e) e.value = v; };
+    // A file input keeps showing the last filename after a reset unless it is cleared, which
+    // reads as "still set" when the slot is empty. The control must state the truth.
+    if (!pg.present) set('bgPageFile', '');
+    if (!il.present) set('bgInlayFile', '');
     set('bgFit', pg.fit); set('bgPosX', pg.posX); set('bgPosY', pg.posY);
     set('bgOp', Math.round((il.present ? il.opacity : 0.14) * 100));
     set('bgRot', il.present ? il.rotate : -6);

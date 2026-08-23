@@ -97,6 +97,12 @@
      inside it remains valid for any image anyone uploads to any agent, now or later. Only the
      answer boxes flip, because they are the surface actually sitting on the scene. */
   body.hasbg.lightbg header,body.hasbg.lightbg .cheatbar,body.hasbg.lightbg footer{--chrome-a:.84}
+  /* Ghosting is opt-in, so these only bite when an inlay image is actually uploaded. A photo has
+     bright and dark regions that no single mean luminance describes, so the text gets a shadow
+     in the opposite direction as well -- measurement picks the colour, the shadow covers the
+     regions the mean got wrong. */
+  body.hasbg.hasinlay .msg{text-shadow:0 1px 2px rgba(0,0,0,.62)}
+  body.hasbg.hasinlay.lightbg .msg{text-shadow:0 1px 2px rgba(255,255,255,.75)}
 </style>
 </head>
 <body>

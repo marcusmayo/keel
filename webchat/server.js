@@ -109,7 +109,12 @@ app.post('/color', requireAuth, (req, res) => {
   if (!hex) return res.json({ ok: false, error: 'unknown color', palette: PALETTE });
   try {
     fs.mkdirSync(path.dirname(UI_STATE), { recursive: true });
-    fs.writeFileSync(UI_STATE, JSON.stringify({ accent: hex }) + '\n');
+    // Merge, never replace: ui.json is shared per-agent UI state, and a whole-file
+    // rewrite here would silently erase every key it does not know about.
+    let ui = {};
+    try { const j = JSON.parse(fs.readFileSync(UI_STATE, 'utf8')); if (j && typeof j === 'object') ui = j; } catch { /* absent or corrupt -> start clean */ }
+    ui.accent = hex;
+    fs.writeFileSync(UI_STATE, JSON.stringify(ui) + '\n');
     res.json({ ok: true, accent: hex });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });

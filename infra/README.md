@@ -21,9 +21,10 @@ one image and one cloud-init core:
 ## Quickstart — self-contained
 ```bash
 ./infra/scripts/build-image.sh        # hash-verified build (see Supply chain)
-./infra/scripts/bootstrap.sh          # TOTP enroll + API key -> keel.env -> up
+./infra/scripts/bootstrap.sh          # model keys -> keel.env -> up
 ```
-Webchat serves on `127.0.0.1:8443` (TOTP login). `bootstrap.sh` publishes on
+Webchat serves on `127.0.0.1:8443` (no app login; Cloudflare Access is the
+factor in front of it). `bootstrap.sh` publishes on
 the tailnet IP automatically if Tailscale is present, loopback otherwise.
 
 ## Quickstart — cloud (Bicep)

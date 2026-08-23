@@ -90,13 +90,13 @@
     background-color:rgba(18,18,18,var(--chrome-a,.64));
     -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
   body.hasbg textarea,body.hasbg #input{background-color:rgba(10,10,10,.74)}
-  /* Light scene: the band flips with the answer boxes, or dark chrome floats on a pale map. */
-  body.hasbg.lightbg header,body.hasbg.lightbg .cheatbar,body.hasbg footer{
-    background-color:rgba(243,243,243,var(--chrome-a,.68));color:#0a0a0a}
-  body.hasbg.lightbg textarea,body.hasbg.lightbg #input{
-    background-color:rgba(252,252,252,.82);color:#0a0a0a;border-color:#c9c9c9}
-  body.hasbg.lightbg header button,body.hasbg.lightbg footer button{
-    background-color:rgba(255,255,255,.72);color:#1a1a1a;border:1px solid #c9c9c9}
+  /* A pale scene makes the band MORE opaque; it never inverts. Inverting it was wrong: castor's
+     header buttons carry inline style="...color:#aaa", which outranks any stylesheet rule, so a
+     light band left them invisible -- and the brand, the model label and the modelbar have fixed
+     dim colours that do not flip either. Chrome stays dark by construction, so every colour
+     inside it remains valid for any image anyone uploads to any agent, now or later. Only the
+     answer boxes flip, because they are the surface actually sitting on the scene. */
+  body.hasbg.lightbg header,body.hasbg.lightbg .cheatbar,body.hasbg.lightbg footer{--chrome-a:.84}
 </style>
 </head>
 <body>

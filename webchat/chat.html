@@ -98,6 +98,12 @@
      inside it remains valid for any image anyone uploads to any agent, now or later. Only the
      answer boxes flip, because they are the surface actually sitting on the scene. */
   body.hasbg.lightbg header,body.hasbg.lightbg .cheattoggle,body.hasbg.lightbg footer{--chrome-a:.84}
+  /* The composer band sits lower than the rest of the chrome. The textarea carries its own body
+     (.74 above), so this band only has to separate the bar from the scene -- at .64 it read as a
+     slab on a pale image and vanished on a dark one, which is why the two agents looked different
+     while running identical CSS. The lightbg selector is repeated so this wins in both states
+     rather than losing to the .84 bump on specificity. */
+  body.hasbg footer,body.hasbg.lightbg footer{--chrome-a:.40}
   /* Ghosting is opt-in, so these only bite when an inlay image is actually uploaded. A photo has
      bright and dark regions that no single mean luminance describes, so the text gets a shadow
      in the opposite direction as well -- measurement picks the colour, the shadow covers the

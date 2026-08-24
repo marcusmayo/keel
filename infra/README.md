@@ -10,7 +10,9 @@ one image and one cloud-init core:
   No public IP on either profile.
 
 ## Prerequisites
-- Docker Engine + Compose v2 (self-contained), or Azure CLI with Bicep (cloud).
+- Docker Engine, Compose v2 and the `docker-buildx` plugin (self-contained) —
+  `build-image.sh` asserts buildx rather than accepting whichever builder is
+  present; or Azure CLI with Bicep (cloud).
 - An Anthropic API key (or a gateway endpoint — see Models).
 - `knowledge/people/` populated with your own stakeholders (names live in data,
   never in code); edit `system/operator-profile.yaml` and

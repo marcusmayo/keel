@@ -1,3 +1,10 @@
+# check=skip=InvalidDefaultArgInFrom
+# ^ MUST be line 1. BuildKit stops looking for parser directives after the first comment,
+#   blank line or instruction, so an explanation placed above it silently disables it.
+#   BASE_IMAGE is defaultless on purpose: the pin lives in infra/versions.lock and
+#   build-image.sh passes it. A default here would be a second copy of that pin, and the
+#   copy that drifts is the one nobody reads. The check is skipped; the discipline is not.
+#
 # Keel runtime image. Build via infra/scripts/build-image.sh (passes pins
 # from infra/versions.lock). Image = code, immutable; state = volumes.
 ARG BASE_IMAGE

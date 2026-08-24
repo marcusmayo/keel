@@ -287,6 +287,13 @@ function mountChatOps(app, opts) {
   });
 
   // ---- background / inlay -----------------------------------------------------------------
+  // SIBLING, NOT SHARED: Aegis implements this same two-slot lane independently in aegis.js
+  // (search "background / inlay" there) against its own ui-state/ directory. Deliberate --
+  // aegis is not a core consumer: it has no vendored core, no manifest, and a different
+  // execution environment (a systemd unit under NoNewPrivileges, not a container), so binding
+  // it to core would be a larger change than the duplication it removes. Change one, read the
+  // other: the wire shape (/ui/background, slots page|inlay, magic-byte typing, 12 MB cap)
+  // is what must stay in step, not the code.
   // Two image slots per agent, both OPTIONAL and both pure preference: `page` fills the window,
   // `inlay` is what the answer boxes ghost. Upload only `page` and the boxes ghost it; upload
   // `inlay` too and it takes over. Files live in the STATE VOLUME (state/ui/), never in the

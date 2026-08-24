@@ -19,6 +19,7 @@
   .pswatch{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid #0e0e0e;box-shadow:0 0 0 1px #444}
   .pswatch:hover{box-shadow:0 0 0 2px var(--accent)}
   .cheatbar { background:#141414; border-bottom:1px solid #262626; font-size:12px; }
+  body.hasbg .cheatbar{background-color:transparent}
   .cheattoggle { padding:6px 16px; color:var(--accent); cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px; }
   .cheattoggle:hover { background:#1a1a1a; }
   .cheatlist { display:none; padding:8px 16px 12px; }
@@ -86,7 +87,7 @@
      busy map. Both get the same translucent band. The blur is load-bearing: alpha alone does
      not make 12px type legible over a photograph. Scoped to body.hasbg, so an agent with no
      image uploaded is untouched. */
-  body.hasbg header,body.hasbg .cheatbar,body.hasbg footer{
+  body.hasbg header,body.hasbg .cheattoggle,body.hasbg footer{
     background-color:rgba(18,18,18,var(--chrome-a,.64));
     -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
   body.hasbg textarea,body.hasbg #input{background-color:rgba(10,10,10,.74)}
@@ -96,7 +97,7 @@
      dim colours that do not flip either. Chrome stays dark by construction, so every colour
      inside it remains valid for any image anyone uploads to any agent, now or later. Only the
      answer boxes flip, because they are the surface actually sitting on the scene. */
-  body.hasbg.lightbg header,body.hasbg.lightbg .cheatbar,body.hasbg.lightbg footer{--chrome-a:.84}
+  body.hasbg.lightbg header,body.hasbg.lightbg .cheattoggle,body.hasbg.lightbg footer{--chrome-a:.84}
   /* Ghosting is opt-in, so these only bite when an inlay image is actually uploaded. A photo has
      bright and dark regions that no single mean luminance describes, so the text gets a shadow
      in the opposite direction as well -- measurement picks the colour, the shadow covers the
@@ -109,7 +110,7 @@
      raise the colours we own, and put a text-shadow on the whole band. The shadow is inherited
      and an inline `color` cannot cancel it, so the inline-styled counters and group headings in
      castor's pending list get carried too -- no !important, no specificity fight. */
-  body.hasbg header,body.hasbg .cheatbar,body.hasbg footer{text-shadow:0 1px 2px rgba(0,0,0,.78)}
+  body.hasbg header,body.hasbg .cheattoggle,body.hasbg .cheatlist,body.hasbg footer{text-shadow:0 1px 2px rgba(0,0,0,.78)}
   body.hasbg .glabel{color:#e8e8e8}
   body.hasbg .modelbar{color:#c8c8c8}
   body.hasbg .cheatlist span,body.hasbg .cheatgroup span{color:#e8e8e8}

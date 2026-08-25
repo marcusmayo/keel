@@ -2,6 +2,11 @@
 # timeout, error shape, preconditions, record-to-state) is fleet-core scripts/skills.js.
 # handler: entries name functions that stay verbatim in webchat/server.js (bespoke
 # query mapping / confirm gates / pre-spawn seeding).
+
+# The core this config needs. 2 = declared request params. A vendored core that reads
+# less REFUSES AT BOOT rather than ignoring `params` and spawning tools with no arguments.
+contract: 2
+
 skills:
   - route: /queue
     bin: node

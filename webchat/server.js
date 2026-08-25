@@ -517,72 +517,12 @@ app.post('/interpret', requireAuth, async (req, res) => {
   }
 });
 
-// --- bespoke skill handlers (query mapping / confirm gate / pre-spawn seeding). ---
-// Bodies are verbatim from the pre-extraction inline routes; fleet-core
-// scripts/skills.js mounts them by name from system/skills.yaml.
-// Merge-confirm: accept/reject/distinct keel-origin merge proposals -> resolutions.json
-const skillHandler_merge = (req, res) => {
-  try {
-    const action = (req.query.action || '').toString();
-    if (!['accept','reject','distinct'].includes(action))
-      return res.json({ ok: false, output: 'action must be accept|reject|distinct' });
-    const keys = (req.query.keys || '').toString().split(/[\s,]+/).filter(Boolean);
-    const out = execFileSync('python3', ['tools/merge_accept.py', action, ...keys],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-};
-
-// Portfolio single-item query. ?q=<text> scored against all state/ item names.
-const skillHandler_find = (req, res) => {
-  try {
-    const q = (req.query.q || '').toString();
-    if (!q.trim()) return res.json({ ok: false, output: 'usage: /find <feature or idea>' });
-    const out = execFileSync('python3', ['tools/find.py', q],
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 30000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-};
-
-// Run apply (land reconcile proposals into state/). ?commit=1 writes; else dry-run.
-const skillHandler_apply = (req, res) => {
-  try {
-    const args = ['tools/apply.py'];
-    if (req.query.commit === '1') args.push('--commit');
-    const out = execFileSync('python3', args,
-                             { cwd: KEEL_DIR, encoding: 'utf8', timeout: 60000 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-};
-
-// Full Northwind E2E demo (DESTRUCTIVE to demo state; confirm-gated). README-only -- no chip.
-const skillHandler_e2e = (req, res) => {
-  if ((req.query.confirm || '') !== '1') {
-    return res.json({ ok: true, output:
-      'RUN-E2E -- full pipeline demo on SYNTHETIC Northwind example data.\n' +
-      'DESTRUCTIVE: regenerates the demo corpus, OVERWRITES keel.config.json\n' +
-      '(SOURCE_KEY_PREFIX=NWR), reseeds knowledge/import/raw/, and drafts 25 demo\n' +
-      'items into state/. Do NOT run on a deployment holding real data.\n' +
-      'Suggested use: run once on a FRESH deployment before loading real data.\n' +
-      'Step 9 calls the LLM: ~30-60s (cloud), seconds (local GPU), several\n' +
-      'minutes (local CPU). The chat will wait -- do not resend.\n\n' +
-      'To proceed, type: /run-e2e confirm' });
-  }
-  try {
-    const out = execFileSync('bash', ['run_e2e.sh', '--yes'],
-                  { cwd: KEEL_DIR, encoding: 'utf8', timeout: 900000, maxBuffer: 10 * 1024 * 1024 });
-    res.json({ ok: true, output: out });
-  } catch (e) {
-    res.json({ ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e) });
-  }
-};
-
+// --- bespoke skill handler (one left: upload, spawn, xlsx, res.download). ---
+// merge / find / apply / e2e used to live here purely because argv needed a value
+// from the query string; fleet-core skills.js takes declared, constrained parameters
+// now, so they are entries in system/skills.yaml and run through the job lane --
+// recorded, audited, and off the event loop. Only a route that genuinely does more
+// than spawn a tool stays a function.
 // Run the deterministic ADO normalizer (no LLM; pure script).
 // Zero-arg: template defaults to agile; output -> state/normalized/ado.json.
 // Demo seed: if no ADO CSV is present, copy the shipped example so a fresh
@@ -611,8 +551,7 @@ const skillHandler_normalizeAdo = (req, res) => {
 
 // Skill/pipeline routes: mechanism in fleet-core scripts/skills.js, values in system/skills.yaml.
 skillsCore.mountSkills(app, { requireAuth, cwd: KEEL_DIR, handlers: {
-  merge: skillHandler_merge, find: skillHandler_find, apply: skillHandler_apply,
-  e2e: skillHandler_e2e, normalizeAdo: skillHandler_normalizeAdo,
+  normalizeAdo: skillHandler_normalizeAdo,
 } });
 
 app.get('/export-multisource', requireAuth, (req, res) => {

@@ -63,17 +63,67 @@ skills:
     args: [scripts/scan-tree.js, .]
     timeout: 60000
     category: Governance
+  # These four were handler entries -- functions in webchat/server.js -- purely because
+  # argv needed a value from the query string. That cost them the job lane (no job record,
+  # no audit row) and ran them under execFileSync, blocking the event loop for the length
+  # of the tool. fleet-core skills.js now takes declared, constrained parameters, so they
+  # are data. Every param that reaches argv names an enum or a pattern; a spec that forgets
+  # stops the server at boot rather than accepting anything at request time.
   - route: /run-merge
-    handler: merge
+    bin: python3
+    args: [tools/merge_accept.py]
+    timeout: 30000
+    params:
+      - name: action
+        required: true
+        enum: [accept, reject, distinct]
+        missingMsg: action must be accept|reject|distinct
+      - name: keys
+        split: true
+        pattern: '^[A-Za-z0-9_.:-]{1,64}$'
+        maxItems: 50
     category: Portfolio
   - route: /run-find
-    handler: find
+    bin: python3
+    args: [tools/find.py]
+    timeout: 30000
+    params:
+      - name: q
+        required: true
+        pattern: '^.{1,200}$'
+        missingMsg: 'usage: /find <feature or idea>'
     category: Portfolio
   - route: /run-apply
-    handler: apply
+    bin: python3
+    args: [tools/apply.py]
+    timeout: 60000
+    params:
+      - name: commit
+        equals: '1'
+        append: flag
+        flag: --commit
     category: Portfolio
+  # Destructive and confirm-gated. `confirm` contributes no argv -- it is the refusal
+  # itself, and the warning below is what an unconfirmed call gets back.
   - route: /run-e2e
-    handler: e2e
+    bin: bash
+    args: [run_e2e.sh, --yes]
+    timeout: 900000
+    params:
+      - name: confirm
+        required: true
+        enum: ['1']
+        append: none
+        missingMsg: |-
+          RUN-E2E -- full pipeline demo on SYNTHETIC Northwind example data.
+          DESTRUCTIVE: regenerates the demo corpus, OVERWRITES keel.config.json
+          (SOURCE_KEY_PREFIX=NWR), reseeds knowledge/import/raw/, and drafts 25 demo
+          items into state/. Do NOT run on a deployment holding real data.
+          Suggested use: run once on a FRESH deployment before loading real data.
+          Step 9 calls the LLM: ~30-60s (cloud), seconds (local GPU), several
+          minutes (local CPU). The chat will wait -- do not resend.
+
+          To proceed, type: /run-e2e confirm
     category: Portfolio
   - route: /run-normalize-ado
     handler: normalizeAdo

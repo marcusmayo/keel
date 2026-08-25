@@ -327,6 +327,117 @@ function listJobs(cwd, limit) {
     }));
 }
 
+// ---------------------------------------------------------------------------
+// Request parameters for spawn entries.
+//
+// A skill that needs an argument used to have to be a handler entry -- a function
+// in that agent's own server.js -- which cost it three things: it never reached
+// startSkillJob, so it produced no job record and no audit row; it ran under
+// execFileSync, so it blocked the event loop for the length of the tool; and it
+// could not travel to another agent by config. All three because argv needed one
+// value from the query string.
+//
+// The grammar is deliberately small. A param may CONTRIBUTE to argv; it may never
+// REWRITE it. There is no interpolation into existing args and no expression
+// language -- values are appended, in spec order, after args. Nothing is passed to
+// a shell (execFile takes an argv array), so the constraint below is not about
+// quoting; it is about what an operator is allowed to hand a tool.
+//
+//   params:
+//     - name: action                 # read from the query string
+//       required: true
+//       enum: [accept, reject, distinct]
+//       append: value                # push the value as a positional arg
+//     - name: keys
+//       split: true                  # whitespace/comma separated -> N positional args
+//       pattern: '^[A-Za-z0-9_.:-]{1,64}$'
+//       maxItems: 50
+//     - name: commit
+//       equals: '1'                  # contributes only on an exact match
+//       append: flag
+//       flag: --commit
+//     - name: confirm                # a gate: refuses the call, adds no argv
+//       required: true
+//       enum: ['1']
+//       append: none
+//       missingMsg: 'destructive -- re-send with confirm=1'
+//
+// THE LOAD-BEARING RULE: a param that reaches argv must declare `enum` or
+// `pattern`. There is no unconstrained pass-through, and a spec that omits both
+// THROWS AT BOOT rather than accepting anything at request time -- the same
+// posture mountSkills already takes for an unknown handler name.
+// ---------------------------------------------------------------------------
+const PARAM_KEYS = new Set(['name', 'required', 'enum', 'pattern', 'equals', 'split', 'maxItems', 'append', 'flag', 'missingMsg']);
+const APPEND_KINDS = new Set(['value', 'flag', 'none']);
+
+// Boot-time validation. Every throw here is a config error an operator can fix by
+// reading the message; none of them can be reached at request time.
+function validateParams(route, params) {
+  if (params === undefined) return [];
+  if (!Array.isArray(params)) throw new Error('skills.yaml: ' + route + ' params must be a list');
+  const seen = new Set();
+  for (const p of params) {
+    if (!p || typeof p !== 'object') throw new Error('skills.yaml: ' + route + ' has a non-object param');
+    for (const k of Object.keys(p)) {
+      if (!PARAM_KEYS.has(k)) throw new Error('skills.yaml: ' + route + ' param "' + (p.name || '?') + '" has unknown key "' + k + '"');
+    }
+    if (typeof p.name !== 'string' || !p.name) throw new Error('skills.yaml: ' + route + ' param missing name');
+    if (seen.has(p.name)) throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" declared twice');
+    seen.add(p.name);
+    const append = p.append || 'value';
+    if (!APPEND_KINDS.has(append)) throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" append must be value|flag|none');
+    if (append === 'flag') {
+      if (typeof p.flag !== 'string' || p.flag[0] !== '-') throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" append:flag needs flag: --something');
+      if (p.split) throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" cannot both split and append a flag');
+    }
+    if (append === 'value' && p.enum === undefined && p.pattern === undefined) {
+      throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" reaches argv and declares neither enum nor pattern -- unconstrained pass-through is refused');
+    }
+    if (p.enum !== undefined && (!Array.isArray(p.enum) || !p.enum.length)) throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" enum must be a non-empty list');
+    if (p.pattern !== undefined) { try { new RegExp(p.pattern); } catch (e) { throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" pattern is not a valid regex: ' + e.message); } }
+    if (p.maxItems !== undefined && (!Number.isInteger(p.maxItems) || p.maxItems < 1)) throw new Error('skills.yaml: ' + route + ' param "' + p.name + '" maxItems must be a positive integer');
+  }
+  return params;
+}
+
+// Request-time resolution. Returns { ok: true, extra: [...] } or { ok: false, output }.
+// A refusal creates NO job -- same posture as the requireFile precondition above it.
+function resolveParams(params, req) {
+  const q = (req && req.query) || {};
+  const extra = [];
+  for (const p of params) {
+    const append = p.append || 'value';
+    const raw = q[p.name];
+    const val = raw === undefined || raw === null ? '' : String(raw);
+    const has = val.trim() !== '';
+    if (!has) {
+      if (p.required) return { ok: false, output: p.missingMsg || ('missing required parameter: ' + p.name) };
+      continue;
+    }
+    if (val.indexOf('\u0000') !== -1) return { ok: false, output: 'invalid value for ' + p.name };
+    if (p.equals !== undefined && val !== String(p.equals)) {
+      if (p.required) return { ok: false, output: p.missingMsg || ('invalid value for ' + p.name) };
+      continue;
+    }
+    const items = p.split ? val.split(/[\s,]+/).filter(Boolean) : [val];
+    if (p.split && items.length > (p.maxItems || 25)) {
+      return { ok: false, output: p.name + ': too many values (max ' + (p.maxItems || 25) + ')' };
+    }
+    for (const it of items) {
+      if (p.enum !== undefined && !p.enum.map(String).includes(it)) {
+        return { ok: false, output: p.missingMsg || (p.name + ' must be one of: ' + p.enum.join('|')) };
+      }
+      if (p.pattern !== undefined && !new RegExp(p.pattern).test(it)) {
+        return { ok: false, output: p.missingMsg || ('invalid value for ' + p.name) };
+      }
+    }
+    if (append === 'value') for (const it of items) extra.push(it);
+    else if (append === 'flag') extra.push(p.flag);
+    // append: none -- the param was a gate; it contributed its refusal, not argv
+  }
+  return { ok: true, extra };
+}
+
 function loadSkills(cwd) {
   const yaml = require('js-yaml');
   const doc = yaml.load(fs.readFileSync(path.join(cwd, 'system', 'skills.yaml'), 'utf8'));
@@ -349,13 +460,16 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
       continue;
     }
     if (!s.bin) throw new Error('skills.yaml: entry ' + s.route + ' needs bin+args or handler');
+    const params = validateParams(s.route, s.params);   // throws at boot, never at request time
     app[method](s.route, requireAuth, (req, res) => {
       if (s.requireFile && !fs.existsSync(path.join(cwd, s.requireFile))) {
         return res.json({ ok: false, output: s.missingMsg || ('missing required file: ' + s.requireFile) });
       }
+      const pr = resolveParams(params, req);
+      if (!pr.ok) return res.json({ ok: false, output: pr.output });   // no job created
       const who = actorOf(req, cwd);
       const job = startSkillJob({
-        bin: s.bin, args: s.args, timeout: s.timeout, cwd, record: s.record,
+        bin: s.bin, args: [...(s.args || []), ...pr.extra], timeout: s.timeout, cwd, record: s.record,
         route: s.route, actor: who, onBehalf: onBehalfOf(req, who),
       });
       return res.status(202).json({
@@ -461,6 +575,7 @@ function refreshRecordsAsync(cwd, cb) {
 }
 
 module.exports = {
+  validateParams, resolveParams,   // exported for the fleet suite; not used by agents directly
   mountSkills, loadSkills, runSkillSpawn, refreshRecords, refreshRecordsAsync,
   startSkillJob, getJob, listJobs,
   // the one identity rule (verified actor, asserted on-behalf-of), shared with the WS chat path

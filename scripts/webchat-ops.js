@@ -34,6 +34,37 @@ function modelLabel(slug) {
     .join(' ');
 }
 
+// ---- upload filenames ------------------------------------------------------------------
+// Truncate the BASENAME, never the extension. The old form ended `.slice(0, 120)`, which cuts
+// from the tail -- exactly where the extension lives. A long "..._transcript.txt" arrived as
+// "..._tr", intake could not classify it and quarantined it as an unsupported type, and the
+// operator was left with a file the gate was right to refuse and no way to see why. The gate
+// was not wrong; the name was already damaged before it reached the gate.
+const NAME_MAX = 120;
+function safeUploadName(n) {
+  const raw = String(n || '').replace(/[^A-Za-z0-9._-]/g, '_');
+  if (raw.length <= NAME_MAX) return raw;
+  const dot = raw.lastIndexOf('.');
+  // A "." near the end is an extension; a "." early in a long name is not, and a 40-character
+  // tail after a dot is not one either -- keeping it would just move the truncation problem.
+  const ext = (dot > 0 && raw.length - dot <= 12) ? raw.slice(dot) : '';
+  return raw.slice(0, NAME_MAX - ext.length) + ext;
+}
+
+// ---- big-JSON routes -------------------------------------------------------------------
+// Routes whose body is a base64 payload rather than a control message. An agent's global
+// express.json() must SKIP these, or it rejects the body before the route's own parser is
+// reached -- which is how a 906 KB photo came back "file too large for import (50mb limit)":
+// base64 inflates by a third, so a 1mb global cap is really a ~786 KB file cap.
+const BIG_JSON_ROUTES = ['/files/stage'];
+const BIG_JSON_LIMIT = '50mb';
+// Exact match or a path segment beneath it; never a bare prefix, so /files/staged-elsewhere
+// cannot inherit the large cap by sharing a few characters.
+function usesBigJson(pathname) {
+  const p = String(pathname || '').split('?')[0];
+  return BIG_JSON_ROUTES.some((r) => p === r || p.startsWith(r + '/'));
+}
+
 function mountChatOps(app, opts) {
   const { requireAuth, modelRouting, cwd } = opts;
   const stateDir = path.join(cwd, 'state');
@@ -180,8 +211,14 @@ function mountChatOps(app, opts) {
   } catch (e) { stageYamlErr = 'cannot read system/agent.yaml: ' + e.message; }
   const STAGE_DIR = path.join(stateDir, 'staging');
   const STAGE_DEST = path.join(cwd, STAGE_DEST_REL);
-  const safeFile = (n) => String(n || '').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
-  let bigJson = null; try { bigJson = require('express').json({ limit: '50mb' }); } catch { /* default body limit applies */ }
+  const safeFile = safeUploadName;
+  // The route-level parser only gets a turn if the agent's GLOBAL express.json() lets the body
+  // through first. It did not: server.js registers a small global parser before mountChatOps is
+  // called, so that one consumed the body and 413'd, and the handler below then reported a
+  // "50mb limit" that had never been consulted. castor capped at 1mb and keel at 10mb, so the
+  // same core route silently had two different ceilings, neither of them the advertised one.
+  // BIG_JSON_ROUTES is the fix's other half: an agent asks core which paths to skip.
+  let bigJson = null; try { bigJson = require('express').json({ limit: BIG_JSON_LIMIT }); } catch { /* default body limit applies */ }
   app.get('/files/staged', requireAuth, (req, res) => {
     let files = [];
     try { files = fs2.readdirSync(STAGE_DIR).map((f) => ({ name: f, bytes: fs2.statSync(path.join(STAGE_DIR, f)).size })); } catch { /* none yet */ }
@@ -471,4 +508,4 @@ function mountChatOps(app, opts) {
   });
 }
 
-module.exports = { mountChatOps, modelLabel, MODEL_LABELS };
+module.exports = { mountChatOps, modelLabel, MODEL_LABELS, BIG_JSON_ROUTES, BIG_JSON_LIMIT, usesBigJson, safeUploadName, NAME_MAX };

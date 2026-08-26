@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: 656266b
-synced_at: 2026-08-26T00:31:43Z
+fleet_core_commit: 67a9e49
+synced_at: 2026-08-26T01:11:45Z
 manifest:
   72ecd6fd0323f5503c9936d1f0ec861bbabf885be1969cacd88883e8fcd60f11  audit-log.js
   575d9bc4a1fe4f9a6a9f1e085339fe97589bcde0c95af41c8bcd37e929f7b3f7  auth.js
@@ -18,7 +18,7 @@ manifest:
   419f53f4b58c780e1e229b0ae7330f69e6dadc1d7a06dae6385eefd500607bc8  queue.js
   45430bf05995be7db800d7058844e050de4afc722b01c599d574eab3840b3bc2  redact.js
   f5d6f41bd6b94e4df9e73130d4eb5818d93cfc65c41cba17c685063b38993540  redaction-gate.js
-  5fb3c200d0c9186d3d40b7abe0809933e099d6998cc723690b3dead9aad167b5  run-tests.js
+  c9d45d465cbd7e25e074ddb930e95f67318cb39fb08f2ddf0ca020047d900c27  run-tests.js
   2f3a7695fefe267593875a4d5b3dd068e60dfe5a7b1f6692d75f58868ba46c65  scan-tree.js
   470b7a4f2f79e827c041fc74f75bb9c35664d9093d02975a85f74a88264b5b45  send-email.js
   b4a581d71b2ab06afb60de234bbfada408455f48f2f812372f33837b600a7513  skills.js

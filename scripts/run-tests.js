@@ -71,8 +71,17 @@ for (const f of files) {
   console.log('  ' + (ok ? 'PASS' : 'FAIL') + '  ' + f.padEnd(28) + String(ms).padStart(6) + 'ms' + (ok ? '' : why));
   if (!ok) {
     failed.push(f);
-    const tail = out.split('\n').slice(-12);
-    for (const line of tail) console.log('        | ' + line);
+    // HEAD AND TAIL, never tail alone. A Node MODULE_NOT_FOUND puts the missing module on the
+    // FIRST line and 20 lines of stack after it, so a tail-only excerpt shows the stack and
+    // hides the cause; the same is true of any harness that prints its failures as it goes and
+    // its summary at the end. Twice in one session a tail-only excerpt cost a round-trip to the
+    // VM to read a line the runner already had.
+    const lines = out.split('\n');
+    const HEAD = 10, TAIL = 12;
+    const show = lines.length <= HEAD + TAIL
+      ? lines
+      : [...lines.slice(0, HEAD), '        ... ' + (lines.length - HEAD - TAIL) + ' line(s) elided ...', ...lines.slice(-TAIL)];
+    for (const line of show) console.log('        | ' + line);
   }
 }
 

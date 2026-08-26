@@ -55,7 +55,13 @@ const queueCore = require('../scripts/queue.js');
 
 const app = express();
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
-app.use(express.json({ limit: '10mb' }));
+// The global parser must SKIP the routes core marks as big-JSON. It is registered before
+// mountChatOps, so without this it consumes and rejects their base64 body first and the
+// route's own 50mb parser never runs -- a 906 KB photo came back "too large (50mb limit)"
+// because base64 inflates by a third and 10mb is really a ~7.5 MB file cap. Everything
+// else keeps the small cap deliberately: a chat prompt has no business being megabytes.
+const smallJson = express.json({ limit: '10mb' });
+app.use((req, res, next) => (chatOps.usesBigJson(req.path) ? next() : smallJson(req, res, next)));
 
 const sessionParser = session({
   secret: crypto.randomBytes(32).toString('hex'),

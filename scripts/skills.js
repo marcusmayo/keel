@@ -322,6 +322,12 @@ function listJobs(cwd, limit) {
     .map(j => ({
       jobId: j.jobId, route: j.route, actor: j.actor, onBehalfOf: j.onBehalfOf || null,
       status: j.status, ok: j.ok,
+      // What it actually ran with. persistJob has always written argv to disk; the read
+      // path dropped it, so the one fact a reader most needs -- WHICH arguments this skill
+      // received -- was recorded and then invisible. That mattered little while argv was
+      // fixed per route; with declared params it is the whole difference between two calls
+      // to the same route, and the only place those values survive.
+      args: Array.isArray(j.args) ? j.args : [],
       exitCode: j.exitCode, timedOut: j.timedOut, startedAt: j.startedAt,
       endedAt: j.endedAt, durationMs: j.durationMs,
     }));
@@ -438,10 +444,40 @@ function resolveParams(params, req) {
   return { ok: true, extra };
 }
 
+// The agent config states which core it needs, and a core that is too old REFUSES.
+//
+// Vendored core and agent config move on separate schedules -- core lands in fleet, the
+// agent repo lands its own commit, and the image only picks core up on a rebuild. Between
+// those, an agent can hold a config its core cannot read. Without this check that is
+// SILENT: an older core does not know `params`, ignores the key, and spawns the tool with
+// no arguments at all. A skill that quietly loses its arguments is worse than one that
+// refuses to mount, so the floor is asserted at boot.
+//
+// 1  bin/args/handler, requireFile, record  (every agent before the grammar)
+// 2  + declared request params
+// Absent means 1, so an untouched agent keeps working and needs no edit.
+const SKILLS_CONTRACT_MAX = 2;
+
+// Pure, so the fleet suite can pin it without js-yaml (which agents supply via NODE_PATH
+// and provision/ deliberately does not depend on). Returns the accepted contract number.
+function assertContract(doc) {
+  const want = (doc && doc.contract) === undefined ? 1 : doc.contract;
+  if (!Number.isInteger(want) || want < 1) {
+    throw new Error('skills.yaml: contract must be a positive integer (got ' + JSON.stringify(doc && doc.contract) + ')');
+  }
+  if (want > SKILLS_CONTRACT_MAX) {
+    throw new Error('skills.yaml declares contract ' + want + ' but this vendored fleet-core reads up to ' +
+      SKILLS_CONTRACT_MAX + ' -- the agent config is NEWER than its core. Vendor a newer fleet-core ' +
+      '(core/sync-core.sh) and rebuild the image; do not edit the stamp.');
+  }
+  return want;
+}
+
 function loadSkills(cwd) {
   const yaml = require('js-yaml');
   const doc = yaml.load(fs.readFileSync(path.join(cwd, 'system', 'skills.yaml'), 'utf8'));
   if (!doc || !Array.isArray(doc.skills)) throw new Error('skills.yaml: expected top-level skills: [ ... ]');
+  assertContract(doc);
   return doc.skills;
 }
 
@@ -575,7 +611,7 @@ function refreshRecordsAsync(cwd, cb) {
 }
 
 module.exports = {
-  validateParams, resolveParams,   // exported for the fleet suite; not used by agents directly
+  validateParams, resolveParams, assertContract, SKILLS_CONTRACT_MAX,   // exported for the fleet suite; not used by agents directly
   mountSkills, loadSkills, runSkillSpawn, refreshRecords, refreshRecordsAsync,
   startSkillJob, getJob, listJobs,
   // the one identity rule (verified actor, asserted on-behalf-of), shared with the WS chat path

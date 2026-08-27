@@ -4,6 +4,7 @@
       "Read",
       "Write",
       "Edit",
+      "Bash",
       "Glob",
       "Grep",
       "WebSearch",

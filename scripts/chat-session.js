@@ -381,7 +381,13 @@ function pendingIntake(cwd, stateDir) {
   const lines = fresh.map((f) => {
     let why = 'refused at intake';
     try { why = String(fs.readFileSync(path.join(qdir, f), 'utf8')).split('\n')[0].replace(/^refused:\s*/, '').trim() || why; } catch { /* sidecar unreadable */ }
-    return '  - ' + f.replace(/\.reason\.txt$/, '').replace(/^\d{8}T\d{6}Z_/, '') + ' — ' + why;
+    // Strip the intake stamp so the operator is told the name THEY uploaded, not the archived
+    // artifact name. Two forms are accepted -- YYYY-MM-DD_ (what intake writes today) and the
+    // ISO-basic YYYYMMDDTHHMMSSZ_ -- because a stamp format is a detail of the classifier and
+    // this notice should not break when it changes. Anything unrecognised is left intact rather
+    // than guessed at: a slightly long name is better than a truncated one.
+    const shown = f.replace(/\.reason\.txt$/, '').replace(/^\d{4}-\d{2}-\d{2}_/, '').replace(/^\d{8}T\d{6}Z_/, '');
+    return '  - ' + shown + ' — ' + why;
   });
   return {
     names: fresh,

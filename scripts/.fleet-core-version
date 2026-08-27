@@ -1,13 +1,13 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: c5c31ef
-synced_at: 2026-08-27T00:52:15Z
+fleet_core_commit: cac20b7
+synced_at: 2026-08-27T01:06:04Z
 manifest:
   72ecd6fd0323f5503c9936d1f0ec861bbabf885be1969cacd88883e8fcd60f11  audit-log.js
   575d9bc4a1fe4f9a6a9f1e085339fe97589bcde0c95af41c8bcd37e929f7b3f7  auth.js
   b0f41946ec51c4e9b25947c3d94062ef160ccb4dfe90568fbbe1022f2aa5df92  backup-push.sh
   a0815b78356875d9936a7dd3185a96e8ba59f5e2bacc54db995d8504e603b93b  capabilities-shared.yaml
   acf2aa742a58c5a98549ec6e0ac76ee3d376e27126b76e462a79287e2453a099  capability.js
-  0e782ea995ba528cbaa36a24d654c6e0c9c5bf2f7ebbe69d87d547c21eb74c72  chat-session.js
+  87937b4bb93c131359ee5c96ed362d0414addf448e0d2fea877d64517fb479cb  chat-session.js
   52c7a72f839024b5bc9a7f9d385f0ef439f851fed070f2fdaadfb602a0cedad3  compliance-checks.js
   6d8da9a9fc29e8843f6574171fda14081721cdf0119e2821b8049c3240c179db  fetch-secret.sh
   6516adafc9293e98d5453b6a86e74d73011f2e223122fd257ba99b319e9fa9f1  health-check.js

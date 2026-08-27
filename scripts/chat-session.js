@@ -340,6 +340,58 @@ function isSessionIncompatError(text) {
   return /content blocks must be non-empty|must have non-empty content/i.test(String(text || ''));
 }
 
+// ---- pending intake notices ------------------------------------------------------------
+// A file refused at intake is recorded where the operator never looks. PROCESS reports a
+// verdict when the classifier finishes inside its bound; anything slower -- or anything the
+// scheduled sweep refused with no operator present -- would otherwise be silent, and the
+// operator becomes the detection mechanism ("I sent eight, you listed six").
+//
+// The notice rides --append-system-prompt, never the prompt: the turn record hashes the
+// prompt as provenance for what the OPERATOR said, and injecting text there would attribute
+// the system's words to them.
+function quarantineDirOf(cwd) {
+  try {
+    const raw = fs.readFileSync(path.join(cwd, 'system', 'agent.yaml'), 'utf8');
+    const m = raw.match(/^quarantine_dir:\s*([^\s#]+)/m);
+    return m ? path.join(cwd, m[1]) : null;
+  } catch { return null; }
+}
+function notifiedFile(stateDir) { return path.join(stateDir, 'intake-notified.json'); }
+function readNotified(stateDir) {
+  try { const a = JSON.parse(fs.readFileSync(notifiedFile(stateDir), 'utf8')); return Array.isArray(a) ? a : []; } catch { return []; }
+}
+// Bounded: the marker holds the most recent 500 names, which is far more than a quarantine dir
+// under the fleet's retention ever carries, and stops an append-only file growing without limit.
+function markNotified(stateDir, names) {
+  if (!names || !names.length) return;
+  try {
+    const merged = [...new Set([...readNotified(stateDir), ...names])].slice(-500);
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(notifiedFile(stateDir), JSON.stringify(merged));
+  } catch { /* best effort: a missed mark repeats a notice, which is the safe direction */ }
+}
+function pendingIntake(cwd, stateDir) {
+  const qdir = quarantineDirOf(cwd);
+  if (!qdir) return { names: [], text: '' };
+  let entries = [];
+  try { entries = (fs.readdirSync(qdir) || []).filter((f) => f.endsWith('.reason.txt')); } catch { return { names: [], text: '' }; }
+  const seen = new Set(readNotified(stateDir));
+  const fresh = entries.filter((f) => !seen.has(f)).sort().slice(-20);
+  if (!fresh.length) return { names: [], text: '' };
+  const lines = fresh.map((f) => {
+    let why = 'refused at intake';
+    try { why = String(fs.readFileSync(path.join(qdir, f), 'utf8')).split('\n')[0].replace(/^refused:\s*/, '').trim() || why; } catch { /* sidecar unreadable */ }
+    return '  - ' + f.replace(/\.reason\.txt$/, '').replace(/^\d{8}T\d{6}Z_/, '') + ' — ' + why;
+  });
+  return {
+    names: fresh,
+    text: 'INTAKE NOTICE (report this to the operator BEFORE answering, then answer normally). '
+      + fresh.length + ' file(s) were REFUSED at intake and are NOT in the knowledge base:\n'
+      + lines.join('\n')
+      + '\nSay so plainly and name them. Do not attempt to recover or reconstruct their contents.',
+  };
+}
+
 // Run one chat turn. onEvent(parsedStreamJsonObject) per line; onDone(code, stderr) at close.
 // Returns the FIRST child process (so the caller can kill it on client disconnect).
 // If a RESUMED turn is rejected by request validation (isSessionIncompatError -- a
@@ -401,9 +453,11 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
     'explicitly asks which model is running.';
   const idFact = identityFact(readIdentity(cwd));
   const facts = idFact ? (idFact + '\n\n' + modelFact) : modelFact;
+  const notice = pendingIntake(cwd, stateDir);
+  const factsAll = notice.text ? (facts + '\n\n' + notice.text) : facts;
   const turnPersona = (persona && persona.trim())
-    ? (persona.trim() + '\n\n' + facts)
-    : facts;
+    ? (persona.trim() + '\n\n' + factsAll)
+    : factsAll;
 
   const start = (sessionId, canRetry) => {
     const args = buildArgs({ prompt, model: runModel, sessionId, persona: turnPersona, webEnabled });
@@ -446,6 +500,10 @@ function runChatTurn({ prompt, model, cwd, stateDir, env }, onEvent, onDone) {
         retry.on('error', (e) => { try { onDone(1, 'retry spawn failed: ' + e.message, { resumed: false }); } catch { /* ignore */ } });
         return; // the retry owns onDone
       }
+      // Mark the notice delivered only on a turn that actually completed: a spawn that died
+      // never reached the operator, and a notice silently consumed by a failed turn is the
+      // exact failure this lane exists to remove.
+      if (code === 0) markNotified(stateDir, notice.names);
       try { onDone(code, stderr, { resumed: !!sessionId }); } catch { /* ignore */ }
     });
 
@@ -462,4 +520,5 @@ module.exports = {
   readIdentity, renderPersona, identityFact, personaFromYaml,
   wsIdentity, turnRecord, currentSessionId, nextTurnIndex,
   readWebAccess, writeWebAccess, readWebState, writeWebState, webToggleDecision, webAccessFile, webDirectMap,
+  pendingIntake, markNotified, readNotified, quarantineDirOf,
 };

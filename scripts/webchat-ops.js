@@ -56,7 +56,10 @@ function safeUploadName(n) {
 // express.json() must SKIP these, or it rejects the body before the route's own parser is
 // reached -- which is how a 906 KB photo came back "file too large for import (50mb limit)":
 // base64 inflates by a third, so a 1mb global cap is really a ~786 KB file cap.
-const BIG_JSON_ROUTES = ['/files/stage'];
+// Every route that mounts the big parser must ALSO be named here, or the global small parser
+// consumes the body first and the route's own limit is never consulted. /a2a/deliver had the
+// route-level parser and not the entry: the same defect as /files/stage, one line apart.
+const BIG_JSON_ROUTES = ['/files/stage', '/a2a/deliver'];
 // The FILE limit is the number an operator is told and the number intake enforces
 // (scripts/intake.js MAX_BYTES). The BODY limit must be larger, because the body is
 // base64 -- 4 bytes carried per 3 bytes of file -- plus a small JSON envelope. Deriving

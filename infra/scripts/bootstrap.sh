@@ -86,7 +86,12 @@ case "$ORKEY" in
   *) echo "ABORT: OPENROUTER_API_KEY must start with sk-or- (got a placeholder or wrong key). Nothing written."; exit 1 ;;
 esac
 umask 177
+# The deploy-time NAME travels in the env file, not in the image: the container learns it at
+# START, so keel:<sha> is byte-identical on every host. cloud-init writes the overlay into the
+# host checkout; .dockerignore keeps it out of the image.
+AGENT_NAME_VALUE="$(sed -n 's/^[[:space:]]*agent_name:[[:space:]]*["'"'"']\{0,1\}\([^"'"'"']*\)["'"'"']\{0,1\}[[:space:]]*$/\1/p' system/agent.local.yaml 2>/dev/null | head -n 1)"
 printf 'ANTHROPIC_API_KEY=%s\nOPENROUTER_API_KEY=%s\nANTHROPIC_BASE_URL=http://gateway:4000\n' "$APIKEY" "$ORKEY" > "$ENV"
+[ -n "$AGENT_NAME_VALUE" ] && printf 'AGENT_NAME=%s\n' "$AGENT_NAME_VALUE" >> "$ENV" || echo "no deploy-time overlay -- AGENT_NAME omitted; the tracked profile default applies"
 umask 022
 # Generate the LiteLLM gateway config from system/model-routing.yaml into an UNTRACKED file the
 # gateway mounts (openrouter.generated.yaml, gitignored); the committed openrouter.yaml beside it

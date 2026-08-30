@@ -13,3 +13,8 @@ exports/
 *.pre-*
 infra/
 !infra/docker/requirements.txt
+
+# The deploy-time name overlay must NOT enter the image. It used to arrive via COPY system/,
+# which made <profile>:<sha> different bytes on every host: same tag, different agent name.
+# The name now arrives at container start from the env file bootstrap writes.
+system/agent.local.yaml

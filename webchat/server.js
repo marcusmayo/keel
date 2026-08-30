@@ -748,6 +748,35 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({ type: 'start' }));
     const t0 = Date.now();
 
+    // CHAT LANE: a declared skill route runs HERE, not at the model. Typing /run-reconcile used
+    // to reach Claude Code, whose slash namespace is .claude/commands, and come back "Unknown
+    // command" -- a truthful refusal from the wrong component. Mechanism is fleet-core
+    // skills.chatSkill: same param validation, same preconditions, same job record and audit
+    // entry as the HTTP route, so a skill run from chat is identical to one run from a click.
+    // null means the prompt named no declared route, and the model answers exactly as before.
+    {
+      const _cs = skillsCore.chatSkill(KEEL_DIR, prompt, {
+        actor: skillsCore.actorOf(req, KEEL_DIR), onBehalf: skillsCore.onBehalfOf(req, skillsCore.actorOf(req, KEEL_DIR)),
+      });
+      if (_cs) {
+        if (!_cs.ok) {
+          ws.send(JSON.stringify({ type: 'token', text: _cs.output }));
+          ws.send(JSON.stringify({ type: 'done' }));
+          return;
+        }
+        ws.send(JSON.stringify({ type: 'step', text: 'running ' + _cs.route }));
+        const _poll = setInterval(() => {
+          const j = skillsCore.getJob(KEEL_DIR, _cs.job.jobId);
+          if (!j || j.status === 'running') return;
+          clearInterval(_poll);
+          ws.send(JSON.stringify({ type: 'token', text: String(j.output || '') }));
+          if (j.timedOut) ws.send(JSON.stringify({ type: 'token', text: '\n[timed out]' }));
+          ws.send(JSON.stringify({ type: 'done' }));
+        }, 500);
+        return;
+      }
+    }
+
     // Multi-turn: fleet-core chat-session resumes ONE rolling session per agent, so the
     // agent's own webchat AND the Aegis relay append to the same conversation. Mechanism
     // lives in core; the transcript is in the Claude Code session store (persistent volume).

@@ -567,6 +567,22 @@ function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
   // Panel-facing catalogue: the same declarative list, minus spawn internals.
   app.get('/skills', requireAuth, (req, res) => res.json({ ok: true, skills: list.map(x => ({
     route: x.route, method: (x.method || 'get').toUpperCase(), name: x.name || x.route, summary: x.summary || x.desc || '',
+    // Declared params travel with the listing. Without them a caller cannot tell a skill that
+    // runs on a click from one that needs arguments, so a panel either runs everything blind --
+    // spawning a param-taking tool with nothing -- or refuses to run anything. The CONSTRAINT
+    // travels too (enum/pattern/required), because a form built from a name alone would offer
+    // free text into argv, and unconstrained pass-through is exactly what validateParams
+    // refuses at boot. Never the value: this is a shape, not an input.
+    params: (x.params || []).map((p) => ({
+      name: p.name,
+      required: !!p.required,
+      append: p.append || 'value',
+      enum: Array.isArray(p.enum) ? p.enum.slice() : undefined,
+      pattern: p.pattern,
+      // No description field: PARAM_KEYS refuses unknown keys at boot, so a param cannot carry
+      // one. The route summary is the only prose there is; inventing an always-empty field here
+      // would be a promise the schema cannot keep.
+    })),
   })) }));
   return list.map(s => s.route);
 }

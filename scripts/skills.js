@@ -483,6 +483,67 @@ function loadSkills(cwd) {
 
 // Mount every entry. Fails LOUD at boot (throws) on a malformed entry or an unknown
 // handler name -- a misconfigured skill set should stop the server, not 500 at request time.
+// CHAT LANE ------------------------------------------------------------------------------
+// A declared skill route typed into chat used to reach Claude Code, which answered "Unknown
+// command" -- correctly, because /run-find is an HTTP route and Claude Code's slash namespace
+// is .claude/commands. Two namespaces, one prefix, and the operator is left holding a refusal
+// from a component that was never asked the right question.
+//
+// So the chat lane matches declared routes FIRST and runs them through this same module: the
+// same param validation, the same requireFile precondition, the same job record and audit
+// entry. The model is not in the path, so a skill run from chat is byte-identical to one run
+// from a click. If the prompt names no declared route, this returns null and the caller hands
+// the text to the model exactly as before.
+//
+// Parsing is deliberately narrow: `/route`, or `/route name=value` repeated. A bare positional
+// value is NOT accepted, because a param only reaches argv after passing an enum or pattern,
+// and guessing which param an unnamed value meant would be exactly the unconstrained
+// pass-through validateParams refuses at boot.
+function parseChatSkill(prompt) {
+  const line = String(prompt || '').trim();
+  if (line[0] !== '/') return null;
+  const sp = line.indexOf(' ');
+  const route = sp === -1 ? line : line.slice(0, sp);
+  const rest = sp === -1 ? '' : line.slice(sp + 1).trim();
+  const query = {};
+  if (rest) {
+    // name=value, value may be quoted or contain commas (split params handle their own commas)
+    const re = /([A-Za-z0-9_]+)=("([^"]*)"|'([^']*)'|(\S+))/g;
+    let m;
+    while ((m = re.exec(rest))) query[m[1]] = m[3] !== undefined ? m[3] : (m[4] !== undefined ? m[4] : m[5]);
+  }
+  return { route, query, rest };
+}
+
+// -> null (not a skill: let the model answer) | { ok:false, output } | { ok:true, job }
+function chatSkill(cwd, prompt, opts) {
+  const parsed = parseChatSkill(prompt);
+  if (!parsed) return null;
+  let list = [];
+  try { list = loadSkills(cwd); } catch (e) { return null; }   // a broken config must not eat chat
+  const s = list.find((x) => x && x.route === parsed.route);
+  if (!s) return null;                                          // unknown slash: the model's business
+  if (s.handler) return { ok: false, output: parsed.route + ' is a route-bound skill (it uploads or streams a file) -- run it from the agent page, not chat' };
+  if (!s.bin) return null;
+  if (s.requireFile && !fs.existsSync(path.join(cwd, s.requireFile))) {
+    return { ok: false, output: s.missingMsg || ('missing required file: ' + s.requireFile) };
+  }
+  let params;
+  try { params = validateParams(s.route, s.params); } catch (e) { return { ok: false, output: e.message }; }
+  const pr = resolveParams(params, { query: parsed.query });
+  if (!pr.ok) {
+    // Say what it needs, in the form the operator must type -- a refusal that does not show the
+    // shape just moves the guessing somewhere else.
+    const shape = (params || []).map((q) => q.name + '=' + (q.enum ? q.enum.join('|') : '<value>')).join(' ');
+    return { ok: false, output: pr.output + (shape ? ('\n' + parsed.route + ' ' + shape) : '') };
+  }
+  const job = startSkillJob({
+    cwd, bin: s.bin, args: (s.args || []).concat(pr.extra), timeout: s.timeout,
+    route: s.route, actor: (opts && opts.actor) || 'chat', onBehalf: (opts && opts.onBehalf) || null,
+  });
+  return { ok: true, job, route: s.route };
+}
+
 function mountSkills(app, { requireAuth, cwd, skills, handlers }) {
   const list = skills || loadSkills(cwd);
   const fns = handlers || {};
@@ -629,6 +690,7 @@ function refreshRecordsAsync(cwd, cb) {
 module.exports = {
   validateParams, resolveParams, assertContract, SKILLS_CONTRACT_MAX,   // exported for the fleet suite; not used by agents directly
   mountSkills, loadSkills, runSkillSpawn, refreshRecords, refreshRecordsAsync,
+  chatSkill, parseChatSkill,          // the chat lane: a declared route runs, it does not reach the model
   startSkillJob, getJob, listJobs,
   // the one identity rule (verified actor, asserted on-behalf-of), shared with the WS chat path
   actorOf, onBehalfOf, actorLabels,

@@ -41,11 +41,30 @@ const ACCESS_LOGOUT = '/cdn-cgi/access/logout';
 // and made a pull that touched the file conflict). The tracked file's agent_name is the
 // profile's default brand and the fallback for a hand-built tree. Regex, no yaml parser:
 // this runs before anything else in server.js. -> string | null
+// Resolution order, and the order is the point:
+//   1. state/agent.local.yaml  -- deploy-time name, on a MOUNTED VOLUME
+//   2. system/agent.local.yaml -- the same file's old home, kept so an agent built before this
+//                                 change still answers to its own name until it is rebuilt
+//   3. system/agent.yaml       -- the tracked profile default, and the fallback for a hand-built tree
+//
+// Why the move: system/ is COPYied into the image, so the overlay was baked in and two agents on
+// the same commit produced different images -- castor:latest on one host literally contained the
+// other's name. The tag stopped identifying an artifact, the build attestation digest stopped
+// being evidence that two agents run the same code, and a shared registry became impossible,
+// which is the model the serverless lanes assume. state/ is a named volume (compose says it
+// outright: image = code, state = volumes), so the name now arrives at container start and the
+// image is identical everywhere.
 function readAgentName(rootDir) {
   const fs = require('node:fs');
   const re = /^\s*agent_name:\s*["']?([^"'\n]+?)["']?\s*$/m;
-  for (const f of ['agent.local.yaml', 'agent.yaml']) {
-    try { const m = fs.readFileSync(path.join(rootDir, 'system', f), 'utf8').match(re); if (m && m[1].trim()) return m[1].trim(); } catch { /* next */ }
+  // 0. $AGENT_NAME -- the deploy-time name delivered at CONTAINER START, from the 0600 env file
+  //    bootstrap writes and compose passes. This is the only source that is neither in the image
+  //    nor seeded from it: a named volume initialises from the image's content at that path, so
+  //    putting the overlay in state/ inside the image would bake it right back in.
+  const envName = String(process.env.AGENT_NAME || '').trim();
+  if (envName) return envName;
+  for (const rel of [['state', 'agent.local.yaml'], ['system', 'agent.local.yaml'], ['system', 'agent.yaml']]) {
+    try { const m = fs.readFileSync(path.join(rootDir, rel[0], rel[1]), 'utf8').match(re); if (m && m[1].trim()) return m[1].trim(); } catch { /* next */ }
   }
   return null;
 }

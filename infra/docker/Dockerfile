@@ -80,6 +80,15 @@ COPY run_e2e.sh clean_demo.sh /app/
 COPY tests/ /app/tests/
 
 # Runtime state mount points, writable by keel whether or not volumes mount.
+# Build provenance: the commit this image was built from, supplied by infra/scripts/build-image.sh.
+# A FILE, not an ENV -- `environment:` in compose overrides env_file and overrides a Dockerfile ENV
+# the same way, so a container could be made to misreport what it is running. system/ carries no
+# mount, so a volume cannot mask it either. Placed here so the chown below covers it, and this late
+# so a new commit invalidates only the last few cheap layers.
+ARG SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.revision="${SOURCE_COMMIT}"
+RUN printf '%s\n' "${SOURCE_COMMIT}" > /app/system/build-commit
+
 RUN mkdir -p /app/state /app/knowledge /app/logs /app/support /app/exports/inbound /app/exports/archive /home/keel/.claude \
     && chown -R keel:keel /app /home/keel/.claude
 

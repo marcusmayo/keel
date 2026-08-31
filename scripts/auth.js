@@ -147,4 +147,24 @@ function mountAuth(app, opts) {
   return requireAuth;
 }
 
-module.exports = { requireAuth, wsUpgradeAllowed, mountAuth, serveBranded, readAgentName, ACCESS_LOGOUT, isLocalMode };
+// The commit this IMAGE was built from -- written at build time from --build-arg SOURCE_COMMIT
+// (see infra/scripts/build-image.sh and the Dockerfile stamp).
+//
+// Deliberately a FILE and not an ENV. `environment:` in compose overrides `env_file`, and it
+// overrides a Dockerfile ENV the same way -- which is exactly how a literal AGENT_NAME in a
+// profile's compose file nearly renamed two agents on their next rebuild. A provenance value
+// that run-time config can overwrite is not provenance. system/ is COPYied into the image and
+// carries no mount, so a volume cannot mask this file either.
+//
+// A build from a tree that is not a git checkout stamps 'unknown'; one from a dirty worktree
+// stamps '<sha>-dirty', because "this image contains code that was never committed" is the
+// single most useful thing provenance can tell you. Anything else reads as null. -> string|null
+function readBuildCommit(rootDir) {
+  const fs = require('node:fs');
+  try {
+    const v = fs.readFileSync(path.join(rootDir, 'system', 'build-commit'), 'utf8').trim();
+    return /^[0-9a-f]{7,40}(-dirty)?$/i.test(v) ? v : null;
+  } catch { return null; }
+}
+
+module.exports = { requireAuth, wsUpgradeAllowed, mountAuth, serveBranded, readAgentName, readBuildCommit, ACCESS_LOGOUT, isLocalMode };

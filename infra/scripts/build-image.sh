@@ -19,6 +19,12 @@ case "$(uname -m)" in
   aarch64|arm64) TARCH=arm64;;
   *) echo "unsupported arch: $(uname -m)" >&2; exit 1;;
 esac
+# The commit this image is built FROM, derived from git alone. Deliberately not reusing TAG:
+# TAG falls back to a date when git is unavailable, and a twelve-digit date passes the shape of
+# a sha -- an image would then report a build time as its provenance. A dirty tree is marked,
+# because "this image contains code that was never committed" is the useful part.
+SOURCE_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [ "$SOURCE_COMMIT" != unknown ] && ! git diff --quiet HEAD 2>/dev/null; then SOURCE_COMMIT="${SOURCE_COMMIT}-dirty"; fi
 sudo docker buildx build ${NOCACHE:-} \
   --build-arg BASE_IMAGE="${UBUNTU_BASE_IMAGE}@${UBUNTU_BASE_DIGEST}" \
   --build-arg NODE_VERSION="${NODE_VERSION}" \
@@ -26,6 +32,7 @@ sudo docker buildx build ${NOCACHE:-} \
   --build-arg NODE_SHA256_ARM64="${NODE_SHA256_LINUX_ARM64}" \
   --build-arg CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION}" \
   --build-arg TARGETARCH="${TARCH}" \
+  --build-arg SOURCE_COMMIT="${SOURCE_COMMIT}" \
   -f infra/docker/Dockerfile \
   -t "keel:${TAG}" -t keel:latest .
-echo "BUILT keel:${TAG}  (buildx $(sudo docker buildx version | awk '{print $2}'))"
+echo "BUILT keel:${TAG}  from ${SOURCE_COMMIT}  (buildx $(sudo docker buildx version | awk '{print $2}'))"

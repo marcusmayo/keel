@@ -82,6 +82,17 @@ const requireAuth = auth.requireAuth;
 const AGENT_NAME = auth.readAgentName(require('path').dirname(__dirname)) || 'Agent';
 auth.mountAuth(app, { webchatDir: __dirname, agentName: AGENT_NAME });
 app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
+// --- build provenance: which commit is this container actually running? -----
+// Aegis reaches agents only over HTTP, so an image label it cannot see is not provenance for the
+// plane. Authenticated -- the revision is not for the open internet. A container built before the
+// stamp existed answers commit: null rather than guessing.
+app.get('/build', requireAuth, (req, res) => res.json({
+  ok: true,
+  commit: auth.readBuildCommit(require('path').dirname(__dirname)),
+  profile: 'keel',
+  name: AGENT_NAME,
+}));
+
 
 // GET / is registered by auth.mountAuth (guarded + brand-injected)
 // --- per-instance UI accent color (set via chat: /color <name|hex>) ----------

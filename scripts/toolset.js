@@ -70,7 +70,6 @@ function scan(root) {
   // A fourth reach-path, kept separate: the e2e harness is not a runtime lane, so a tool only it
   // reaches is not dead -- but it must still ship, or the harness fails when it is most needed.
   const fromHarness = refsIn(readIf(path.join(root, 'run_e2e.sh')));
-  for (const h of refsIn(readIf(path.join(root, 'run_e2e.sh')))) fromHarness.add(h);
   const seeds = new Set([...fromSkills, ...fromHandlers, ...fromHarness]);
 
   // reach-path 3: transitive closure over sibling imports
@@ -89,12 +88,61 @@ function scan(root) {
   const missing = [...closure].filter((n) => !names.has(n)).sort();           // reached, not in the repo
   const undeclared = declared ? [...closure].filter((n) => !declared.includes(n)).sort() : [];
   const unreached = present.filter((n) => !closure.has(n)).sort();            // carried, never reached
+  // A declaration that lists only what is REACHED is not an inventory: a tool can be added to the
+  // repo, ship in the image, appear in no declaration, and nothing ever asks why -- which is the
+  // hole the file exists to close. So a declaration must account for everything the image carries,
+  // in both directions: nothing carried may be unlisted, and nothing listed may be absent.
+  const carriedUndeclared = declared ? present.filter((n) => !declared.includes(n)).sort() : [];
+  const declaredMissing = declared ? declared.filter((n) => !names.has(n)).sort() : [];
   return {
-    present, declared, fromSkills: [...fromSkills].sort(), fromHandlers: [...fromHandlers].sort(),
+    present, declared, adopted: declared !== null,
+    fromSkills: [...fromSkills].sort(), fromHandlers: [...fromHandlers].sort(),
     fromHarness: [...fromHarness].sort(),
-    closure: [...closure].sort(), missing, undeclared, unreached, external: [...external].sort(),
-    ok: missing.length === 0 && undeclared.length === 0,
+    closure: [...closure].sort(), missing, undeclared, unreached, carriedUndeclared, declaredMissing,
+    external: [...external].sort(),
+    ok: missing.length === 0 && undeclared.length === 0
+      && carriedUndeclared.length === 0 && declaredMissing.length === 0,
   };
 }
 
-module.exports = { scan, STDLIB };
+// Report, for humans and for the build. `--check` REFUSES: a profile with no declaration fails
+// too, because absence of a declaration is not a declaration of absence -- the same posture
+// verify-core takes about a missing manifest.
+function report(root, { check = false } = {}) {
+  const s = scan(root);
+  const say = (k, v) => console.log('  ' + k.padEnd(20) + v);
+  console.log('toolset: ' + root);
+  say('present', String(s.present.length));
+  say('declared', s.adopted ? String(s.declared.length) : '(none -- system/toolset.yaml absent)');
+  say('reached', s.closure.length + '  (skills ' + s.fromSkills.length + ', handlers '
+    + s.fromHandlers.length + ', harness ' + s.fromHarness.length + ')');
+  if (s.unreached.length) say('carried, unreached', s.unreached.join(', '));
+  if (s.external.length) say('external packages', s.external.join(', '));
+  const faults = [];
+  if (s.missing.length) faults.push('REACHED BUT ABSENT FROM THE REPO: ' + s.missing.join(', '));
+  if (s.undeclared.length) faults.push('REACHED BUT UNDECLARED: ' + s.undeclared.join(', '));
+  if (s.carriedUndeclared.length) faults.push('CARRIED BUT UNDECLARED: ' + s.carriedUndeclared.join(', '));
+  if (s.declaredMissing.length) faults.push('DECLARED BUT ABSENT: ' + s.declaredMissing.join(', '));
+  if (!check) { for (const f of faults) console.log('  ' + f); return faults.length ? 1 : 0; }
+  if (!s.adopted) {
+    console.log('  TOOLSET CHECK FAILED: this profile declares no toolset.');
+    console.log('    Write system/toolset.yaml listing every tools/*.py the image carries.');
+    return 1;
+  }
+  if (faults.length) {
+    console.log('  TOOLSET CHECK FAILED:');
+    for (const f of faults) console.log('    ' + f);
+    return 1;
+  }
+  console.log('  toolset OK -- ' + s.declared.length + ' declared, ' + s.closure.length
+    + ' reached, nothing carried that is not declared');
+  return 0;
+}
+
+if (require.main === module) {
+  const argv = process.argv.slice(2);
+  const root = argv.find((a) => !a.startsWith('--')) || process.cwd();
+  process.exit(report(root, { check: argv.includes('--check') }));
+}
+
+module.exports = { scan, report, STDLIB };

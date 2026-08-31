@@ -1,0 +1,34 @@
+# What this profile CARRIES. Not what it reaches -- an inventory, checked in both directions by
+# core/toolset.js at build time (RUN node /app/scripts/toolset.js /app --check):
+#   - a tools/*.py in the repo that is absent from this list FAILS the build
+#   - a name in this list that is absent from the repo FAILS the build
+# So a tool cannot ship unnoticed, and this file cannot name something that is not there.
+# The analyzer reports separately which of these are reached by skills.yaml, handler code or the
+# e2e harness, and which are carried but reached by nothing -- run it with no --check to see.
+tools:
+  - _recon
+  - _require
+  - apply
+  - apply_inference_decisions
+  - apply_portfolio_edits
+  - apply_scores
+  - backfill_parents
+  - confirm_item
+  - count_inference_decisions
+  - delete_item
+  - draft_item_write
+  - export_multisource
+  - export_reconcile
+  - find
+  - merge_accept
+  - merge_pass
+  - normalize_ado
+  - normalize_backlog
+  - normalize_jira
+  - reconcile
+  - reconcile_semantic
+  - resolve_parent
+  - score_pass
+  - set_backlog_type
+  - stamp_merges
+  - verify_e2e

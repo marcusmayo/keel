@@ -80,6 +80,11 @@ COPY run_e2e.sh clean_demo.sh /app/
 COPY tests/ /app/tests/
 
 # Runtime state mount points, writable by keel whether or not volumes mount.
+# Toolset gate: every tools/*.py the image carries must be named in system/toolset.yaml, and
+# every name there must exist. A skill can name a tool the image does not contain, and today that
+# fails at invocation, to whoever invoked it. This moves the failure to the build.
+RUN node /app/scripts/toolset.js /app --check
+
 # Build provenance: the commit this image was built from, supplied by infra/scripts/build-image.sh.
 # A FILE, not an ENV -- `environment:` in compose overrides env_file and overrides a Dockerfile ENV
 # the same way, so a container could be made to misreport what it is running. system/ carries no

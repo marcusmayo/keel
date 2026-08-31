@@ -1,6 +1,6 @@
 # fleet-core sync stamp -- do not edit by hand
-fleet_core_commit: a884398
-synced_at: 2026-08-31T18:34:30Z
+fleet_core_commit: 970e706
+synced_at: 2026-08-31T23:12:19Z
 manifest:
   72ecd6fd0323f5503c9936d1f0ec861bbabf885be1969cacd88883e8fcd60f11  audit-log.js
   57e816bc9c9190b79673a727d4811e72a2d892ab709dfe40aa1084b55a390747  auth.js
@@ -15,7 +15,7 @@ manifest:
   e4d5759abc7dce72d5e26c04d4fdae4f4b6f4a2ad29dffff7164f2c24a84aabb  model-routing.js
   a5f662f05037a3ee34b7d267b73ee88535fd149bf866fce3c06e928e1b0d3809  notify.js
   849e4e6603b57efe1cb9602a9ada7460be13a78eea11ddcb85479b06fdeeb1a6  pii-scan.sh
-  419f53f4b58c780e1e229b0ae7330f69e6dadc1d7a06dae6385eefd500607bc8  queue.js
+  113a3face60e21d83e272ac9910bec2ce644034a61b091ae4a9b84172fad6387  queue.js
   45430bf05995be7db800d7058844e050de4afc722b01c599d574eab3840b3bc2  redact.js
   f5d6f41bd6b94e4df9e73130d4eb5818d93cfc65c41cba17c685063b38993540  redaction-gate.js
   c9d45d465cbd7e25e074ddb930e95f67318cb39fb08f2ddf0ca020047d900c27  run-tests.js

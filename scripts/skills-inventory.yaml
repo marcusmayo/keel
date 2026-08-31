@@ -1,0 +1,65 @@
+# fleet-core SKILL INVENTORY -- shared definitions, vendored into every agent as
+# scripts/skills-inventory.yaml and hash-verified by verify-core like any other core module.
+#
+# These nine were maintained TWICE, byte-identical, in keel/system/skills.yaml and
+# castor/system/skills.yaml. Two copies of one definition is one definition that can drift.
+#
+# A profile TAKES from here by naming routes under inventory: in its own system/skills.yaml.
+# It cannot edit what it takes -- there is no override, because an override is how a shared
+# definition stops being shared. A profile that needs different behaviour defines its own
+# skill, and a route defined in both places is REFUSED at boot, not silently resolved.
+contract: 3
+skills:
+  - route: /run-audit-verify
+    bin: node
+    args: [scripts/audit-log.js, verify]
+    timeout: 30000
+    record: audit-verify
+    category: Governance
+  - route: /run-check-auth
+    bin: node
+    args: [scripts/compliance-checks.js, edge-auth]
+    timeout: 15000
+    record: edge-auth
+    category: Governance
+  - route: /run-check-backup
+    bin: node
+    args: [scripts/compliance-checks.js, backup]
+    timeout: 15000
+    record: backup
+    category: Governance
+  - route: /run-check-net
+    bin: node
+    args: [scripts/compliance-checks.js, net-ingress]
+    timeout: 15000
+    record: net-ingress
+    category: Governance
+  - route: /run-check-pause
+    bin: node
+    args: [scripts/compliance-checks.js, fleet-pause]
+    timeout: 15000
+    record: fleet-pause
+    category: Governance
+  - route: /run-check-pii
+    bin: node
+    args: [scripts/compliance-checks.js, pii]
+    timeout: 15000
+    record: pii-redaction
+    category: Governance
+  - route: /run-check-secrets
+    bin: node
+    args: [scripts/compliance-checks.js, secrets]
+    timeout: 90000
+    record: secret-scan
+    category: Governance
+  - route: /run-check-vuln
+    bin: node
+    args: [scripts/compliance-checks.js, vuln]
+    timeout: 60000
+    record: vuln-audit
+    category: Governance
+  - route: /run-scan-tree
+    bin: node
+    args: [scripts/scan-tree.js, .]
+    timeout: 60000
+    category: Governance

@@ -65,7 +65,11 @@ function scan(root) {
     : null;
 
   // reach-path 1 and 2
+  // Both places a skill can name a tool: the profile's own file, and the shared inventory it
+  // takes from. Reading only the first would let an inventory skill reach a tool that no
+  // declaration accounts for -- the gate would pass and the tool would be missing at invocation.
   const fromSkills = refsIn(readIf(path.join(root, 'system', 'skills.yaml')));
+  for (const n of refsIn(readIf(path.join(root, 'scripts', 'skills-inventory.yaml')))) fromSkills.add(n);
   const fromHandlers = refsIn(readIf(path.join(root, 'webchat', 'server.js')));
   // A fourth reach-path, kept separate: the e2e harness is not a runtime lane, so a tool only it
   // reaches is not dead -- but it must still ship, or the harness fails when it is most needed.

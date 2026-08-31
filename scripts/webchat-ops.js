@@ -51,6 +51,34 @@ function safeUploadName(n) {
   return raw.slice(0, NAME_MAX - ext.length) + ext;
 }
 
+// Two uploads whose names SANITISE to the same string used to become one file: writeFileSync
+// overwrote, both answered 200 with the same name, and the operator saw two successes with one
+// file to show for it. NAME_MAX truncation makes that easy to reach without noticing -- a
+// " - Copy" suffix sits past the cap, so a duplicate dragged in alongside its original collides.
+//
+// Re-staging the SAME BYTES stays idempotent, because clicking Stage twice on one selection is
+// ordinary and should not multiply files. Different bytes get a distinct name, and the response
+// reports the name actually written, so two uploads always leave two files and the log says what
+// they were called. -> { name, reused }
+function uniqueStageName(dir, name, buf) {
+  const fsx = require('node:fs');
+  const same = (p) => { try { const b = fsx.readFileSync(p); return b.length === buf.length && b.equals(buf); } catch { return null; } };
+  const first = same(path.join(dir, name));
+  if (first === null) return { name, reused: false };   // nothing there
+  if (first === true) return { name, reused: true };    // identical -- already staged
+  const dot = name.lastIndexOf('.');
+  const ext = (dot > 0 && name.length - dot <= 12) ? name.slice(dot) : '';
+  const stem = ext ? name.slice(0, name.length - ext.length) : name;
+  for (let i = 2; i <= 999; i++) {
+    const tail = '-' + i;
+    const cand = stem.slice(0, Math.max(1, NAME_MAX - ext.length - tail.length)) + tail + ext;
+    const hit = same(path.join(dir, cand));
+    if (hit === null) return { name: cand, reused: false };
+    if (hit === true) return { name: cand, reused: true };
+  }
+  throw new Error('too many staged files named like ' + name);
+}
+
 // ---- big-JSON routes -------------------------------------------------------------------
 // Routes whose body is a base64 payload rather than a control message. An agent's global
 // express.json() must SKIP these, or it rejects the body before the route's own parser is
@@ -253,9 +281,17 @@ function mountChatOps(app, opts) {
     if (!name || typeof b.dataBase64 !== 'string') return res.status(400).json({ ok: false, error: 'need {name, dataBase64}' });
     let buf; try { buf = Buffer.from(b.dataBase64, 'base64'); } catch { return res.status(400).json({ ok: false, error: 'bad base64' }); }
     fs2.mkdirSync(STAGE_DIR, { recursive: true });
-    fs2.writeFileSync(path.join(STAGE_DIR, name), buf);
-    audit({ event: 'file-stage', name, bytes: buf.length });
-    res.json({ ok: true, name, bytes: buf.length, message: 'staged ' + name + ' (' + buf.length + ' bytes) — Process moves it to ' + STAGE_DEST_REL });
+    let picked;
+    try { picked = uniqueStageName(STAGE_DIR, name, buf); }
+    catch (e) { return res.status(409).json({ ok: false, error: e.message }); }
+    if (!picked.reused) fs2.writeFileSync(path.join(STAGE_DIR, picked.name), buf);
+    audit({ event: 'file-stage', name: picked.name, bytes: buf.length, requested: picked.name === name ? null : name, reused: picked.reused });
+    const msg = picked.reused
+      ? 'already staged as ' + picked.name + ' (' + buf.length + ' bytes, identical) — Process moves it to ' + STAGE_DEST_REL
+      : (picked.name === name
+        ? 'staged ' + picked.name + ' (' + buf.length + ' bytes) — Process moves it to ' + STAGE_DEST_REL
+        : 'staged as ' + picked.name + ' (' + buf.length + ' bytes) — renamed from ' + name + ', which held a DIFFERENT file — Process moves it to ' + STAGE_DEST_REL);
+    res.json({ ok: true, name: picked.name, requested: name, renamed: picked.name !== name, reused: picked.reused, bytes: buf.length, message: msg });
   });
   // Oversize uploads must fail as JSON, not Express's HTML error page (the client parses JSON).
   app.use('/files', (err, req, res, next) => {
@@ -576,4 +612,4 @@ function mountChatOps(app, opts) {
   });
 }
 
-module.exports = { mountChatOps, modelLabel, MODEL_LABELS, BIG_JSON_ROUTES, BIG_JSON_LIMIT, MAX_IMPORT_FILE_MB, usesBigJson, safeUploadName, NAME_MAX };
+module.exports = { mountChatOps, modelLabel, MODEL_LABELS, BIG_JSON_ROUTES, BIG_JSON_LIMIT, MAX_IMPORT_FILE_MB, usesBigJson, safeUploadName, uniqueStageName, NAME_MAX };

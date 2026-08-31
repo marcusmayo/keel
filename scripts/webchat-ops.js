@@ -358,11 +358,16 @@ function mountChatOps(app, opts) {
     const name = safeFile((req.body || {}).name);
     const src = path.join(STAGE_DIR, name);
     if (!name || !fs2.existsSync(src)) return res.status(404).json({ ok: false, error: 'not staged: ' + name });
+    // Declared OUT here on purpose. It used to be a const inside the try, and the classify()
+    // call below reads it -- so every process threw ReferenceError AFTER the copy and unlink had
+    // both completed. Express answered with its own HTML 500 and the operator was told the file
+    // failed while it was already in the pipeline: the precise inversion of what this endpoint
+    // was rewritten to prevent.
+    const dst = path.join(STAGE_DEST, name);
     try {
       fs2.mkdirSync(STAGE_DEST, { recursive: true });
       // copy+unlink, not rename: staging (state volume) and the pipeline dir are
       // different filesystems on both profiles, and rename() cannot cross devices (EXDEV).
-      const dst = path.join(STAGE_DEST, name);
       fs2.copyFileSync(src, dst);
       fs2.unlinkSync(src);
     } catch (e) {
@@ -374,7 +379,14 @@ function mountChatOps(app, opts) {
     // six came back, and the operator was the detection mechanism. Run the profile's own
     // classifier now, bounded, and report what it decided. A slow file (OCR, vision) hits the
     // timeout and reports 'pending' -- honestly -- and the next-turn notice carries it instead.
-    const verdict = classify(name, dst);
+    // Past this line the file HAS MOVED, so nothing here may throw its way into an error page:
+    // the operator would read "failed" about work that is done, and act on it. A classifier that
+    // blows up degrades to the honest minimum -- it moved, we do not yet know the verdict.
+    let verdict;
+    try { verdict = classify(name, dst); }
+    catch (e) {
+      verdict = { verdict: 'pending', dest: STAGE_DEST_REL, message: name + ' -> ' + STAGE_DEST_REL + ' — moved, but classification failed (' + (e && e.message ? e.message : e) + '); the outcome will be reported on the next turn' };
+    }
     audit({ event: 'file-verdict', name, verdict: verdict.verdict, reason: verdict.reason || null });
     res.json({ ok: true, name, ...verdict });
   });

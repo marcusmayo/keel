@@ -63,3 +63,25 @@ skills:
     args: [scripts/scan-tree.js, .]
     timeout: 60000
     category: Governance
+# Promoted from the profiles because they are generic. /queue and /queue-clear were carried by
+# BOTH under different category labels -- Capture on keel, Intake on castor -- which is the
+# drift a second copy invites. One label now: Intake, castor's. Nothing renders category today,
+# so this changes no behaviour; it stops the two files disagreeing about the same skill.
+# /run-capability-status names scripts/setup-wizard.js, which only castor carries -- taking is
+# opt-in, so a profile without that file simply does not name it.
+  - route: /queue
+    bin: node
+    args: [scripts/queue.js]
+    timeout: 15000
+    category: Intake
+  - route: /queue-clear
+    bin: node
+    args: [scripts/queue.js, archive, --all]
+    timeout: 20000
+    category: Intake
+  - route: /run-capability-status
+    bin: node
+    args: [scripts/setup-wizard.js, --status]
+    timeout: 30000
+    record: capability-status
+    category: Governance

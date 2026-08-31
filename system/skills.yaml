@@ -15,6 +15,8 @@ contract: 3
 # refused at boot. contract: 3 is required to take: an older vendored core reads up to 2 and
 # must REFUSE this file rather than accept it and mount without these nine.
 inventory:
+  - /queue
+  - /queue-clear
   - /run-audit-verify
   - /run-check-auth
   - /run-check-backup
@@ -26,16 +28,6 @@ inventory:
   - /run-scan-tree
 
 skills:
-  - route: /queue
-    bin: node
-    args: [scripts/queue.js]
-    timeout: 15000
-    category: Capture
-  - route: /queue-clear
-    bin: node
-    args: [scripts/queue.js, archive, --all]
-    timeout: 20000
-    category: Capture
   - route: /run-apply-edits
     bin: python3
     args: [tools/apply_portfolio_edits.py, exports/inbound/pending-edit.xlsx, --commit]
